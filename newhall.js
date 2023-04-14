@@ -16,6 +16,16 @@ function mmul(a, b) {
   });
 }
 
+function dot(a, b) {
+  if (a.length !== b.length) {
+    throw new Error(`Vectors are not compatible for dot product (a: ${a.length}, b: ${b.length})`)
+  }
+
+  return a.reduce((sum, curr, i) => {
+    return sum + curr * b[i];
+  }, 0);
+}
+
 if (typeof require !== 'undefined') {
   const assert = require('assert');
   // Example 1
@@ -98,6 +108,43 @@ function dchebyshevT(n, x) {
   return n * chebyshevU(n - 1, x)
 }
 
+function memoize(fn, makeKey = JSON.stringify) {
+  const cache = {}
+  return function (...args) {
+    const key = makeKey(args)
+    if (cache[key]) return cache[key]
+    const result = fn(...args)
+    cache[key] = result
+    return result
+  }
+}
+
+const chebyshevCoeffs = memoize(function chebyshevCoeffs(n) {
+  if (n === 0) return [1]
+  if (n === 1) return [0, 1]
+
+  const nm1 = chebyshevCoeffs(n - 1)
+  const nm2 = chebyshevCoeffs(n - 2)
+  const nm1_2x = [0].concat(nm1.map((x) => x * 2))
+  const nm2_inv = nm2.map((x) => -x)
+  const sum = nm1_2x.map((x, i) => x + (nm2_inv[i] ?? 0))
+
+  return sum
+}, (args) => args[0])
+
+if (typeof require !== 'undefined') {
+  const assert = require('assert')
+  assert.deepStrictEqual(chebyshevCoeffs(0), [1]);
+  assert.deepStrictEqual(chebyshevCoeffs(1), [0, 1]);
+  assert.deepStrictEqual(chebyshevCoeffs(2), [-1, 0, 2]);
+  assert.deepStrictEqual(chebyshevCoeffs(3), [0, -3, 0, 4]);
+  assert.deepStrictEqual(chebyshevCoeffs(4), [1, 0, -8, 0, 8]);
+}
+
+function chebyshevCoeff(n, k) {
+  return chebyshevCoeffs(n)[k] ?? 0
+}
+
 function newhallT(degree, divisions) {
   const rows = []
   for (let i = 0; i <= divisions; i++) {
@@ -172,6 +219,37 @@ function newhallC(degree, divisions, w = 0.4) {
   )
 }
 
+// A function that behaves like Mathematica's Table[]
+function table(fn, start, end, step = 1) {
+  const result = []
+  for (let i = start; i <= end; i += step) {
+    result.push(fn(i))
+  }
+  return result
+}
+// A function that behaves like Mathematica's Sum[]
+function sum(fn, add, start, end, step = 1) {
+  let result = null
+  for (let i = start; i <= end; i += step) {
+    if (result === null) result = fn(i)
+    else result = add(result, fn(i))
+  }
+  return result
+}
+
+function scale(a, s) {
+  return a.map((x) => x * s)
+}
+
+function newhallMonomialC(degree, divisions, w = 0.4) {
+  const c = newhallC(degree, divisions, w)
+
+  return table((k) =>
+    sum((n) => scale(c[n], chebyshevCoeff(n, k)), (a, b) => a.map((x, i) => x + b[i]), 0, degree),
+    0, degree
+  )
+}
+
 export function newhallApproximationInChebyshevBasis(degree, divisions, q, v, tMin, tMax) {
   if (q.length !== divisions + 1) throw new Error('q length mismatch')
   if (v.length !== divisions + 1) throw new Error('v length mismatch')
@@ -191,3 +269,69 @@ export function newhallApproximationInChebyshevBasis(degree, divisions, q, v, tM
     errorEstimate,
   }
 }
+
+function homogeneousCoefficients(degree, divisions, qv) {
+  const cRow = newhallC(degree, divisions)[degree]
+  const errorEstimate = dot(cRow, qv)
+  return {
+    coefficients: mmul(newhallMonomialC(degree, divisions), transpose([qv])),
+    errorEstimate,
+  }
+}
+
+function dehomogenize(coefficients, scale, origin) {
+  return new Polynomial(coefficients.map((x, i) => x * scale ** i), origin)
+}
+
+export function newhallApproximationInMonomialBasis(degree, divisions, q, v, tMin, tMax) {
+  if (q.length !== divisions + 1) throw new Error('q length mismatch')
+  if (v.length !== divisions + 1) throw new Error('v length mismatch')
+
+  const durationOverTwo = (tMax - tMin) / 2
+
+  const qv = Array(2 * divisions + 2)
+  for (let i = 0, j = 2 * divisions; i < divisions + 1 && j >= 0; ++i, j -= 2) {
+    qv[j] = q[i]
+    qv[j + 1] = v[i] * durationOverTwo
+  }
+
+  const tMid = (tMin + tMax) / 2
+  const { coefficients, errorEstimate } = homogeneousCoefficients(degree, divisions, qv)
+  return {
+    polynomial: dehomogenize(coefficients, 1 / durationOverTwo, tMid),
+    errorEstimate,
+  }
+}
+
+class Polynomial {
+  #coefficients
+  #origin
+  constructor(coefficients, origin) {
+    this.#coefficients = coefficients
+    this.#origin = origin
+  }
+
+  evaluate(arg) {
+    const t = arg - this.#origin
+    return this.#coefficients.reduce((acc, c, i) => acc + c * t ** i, 0)
+  }
+}
+
+/*
+function evalCheb(coeffs, t) {
+  return coeffs.reduce((acc, c, i) => acc + c * chebyshevT(i, t), 0)
+}
+
+const cheb = newhallApproximationInChebyshevBasis(3, 2, [1, 2, 3], [1, 1, 1], 0, 1)
+console.log(cheb)
+console.log(evalCheb(cheb.coefficients, -1))
+console.log(evalCheb(cheb.coefficients, -0.5))
+console.log(evalCheb(cheb.coefficients, 0))
+console.log(evalCheb(cheb.coefficients, 0.5))
+console.log(evalCheb(cheb.coefficients, 1))
+
+const mono = newhallApproximationInMonomialBasis(3, 2, [1, 2, 3], [1, 1, 1], 1, 2)
+console.log(mono)
+console.log(mono.polynomial.evaluate(1));
+console.log(mono.polynomial.evaluate(2));
+*/

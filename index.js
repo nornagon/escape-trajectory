@@ -195,15 +195,20 @@ function worldToScreen(pos) {
 
 const divisions = 8
 class Trajectory {
-  constructor() {
-    this.points = []
-  }
+  #positions = []
+  #velocities = []
+  constructor() {}
 
-  addPoint(point) {
-    this.points.push(point)
-    if (this.points.length >= divisions) {
-      // Simplify the trajectory using Newhall approximation
+  append(time, position, velocity) {
+    this.#positions.push(position)
+    this.#velocities.push(velocity)
+    if (this.#positions.length === divisions + 1) {
+      this.computeBestNewhallApproximation(time, this.#positions, this.#velocities)
     }
+    this.#positions[0] = this.#positions[divisions]
+    this.#positions.length = 1
+    this.#velocities[0] = this.#velocities[divisions]
+    this.#velocities.length = 1
   }
 
   computeBestNewhallApproximation(t, q, v) {
