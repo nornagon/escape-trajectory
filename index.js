@@ -29,14 +29,12 @@ let bodies = [
 const ephemeris = new Ephemeris({
   bodies,
   time: 0,
-  // TODO: for some reason our integrator moves 8 times faster than it should
-  // for now just hack by dividing the time. ... but this is a bug.
-  step: 10 * 60 / 8,
+  step: 10 * 60,
   tolerance: 1e-3,
 })
 window.ephemeris = ephemeris
 
-ephemeris.prolong(180 * 24 * 60 * 60 / 8)
+ephemeris.prolong(180 * 24 * 60 * 60)
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
@@ -134,7 +132,7 @@ function draw() {
     ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
     ctx.scale(zoom/1e9, zoom/1e9)
     ctx.beginPath()
-    for (let t = 0; t < tMax; t += 100 * 60) {
+    for (let t = 0; t < tMax; t += 100 * 60 * 8) {
       const q = trajectory.evaluatePosition(t)
       const originQ = originBodyTrajectory.evaluatePosition(t)
       if (t === 0) {

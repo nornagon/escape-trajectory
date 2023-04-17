@@ -4,6 +4,9 @@ const vops = {
   add(a, b) {
     return { x: a.x + b.x, y: a.y + b.y }
   },
+  sub(a, b) {
+    return { x: a.x - b.x, y: a.y - b.y }
+  },
   scale(a, s) {
     return { x: a.x * s, y: a.y * s }
   },
@@ -15,6 +18,7 @@ const vops = {
 
 const G = 6.67408e-11
 
+/*
 const divisions = 8
 const minDegree = 3
 const maxDegree = divisions * 2 + 1
@@ -152,6 +156,50 @@ function lowerBound(array, value, compare) {
   }
   return first
 }
+*/
+
+// equivalent of std::lower_bound
+function lowerBound(array, compare) {
+  let first = 0
+  let count = array.length
+  while (count > 0) {
+    const step = Math.floor(count / 2)
+    let it = first + step
+    if (compare(array[it])) {
+      first = ++it
+      count -= step + 1
+    } else {
+      count = step
+    }
+  }
+  return first
+}
+
+class Trajectory {
+  #points = []
+  append(time, position, velocity) {
+    this.#points.push({time, position, velocity})
+  }
+
+  get tMax() {
+    return this.#points.length ? this.#points[this.#points.length - 1].time : 0
+  }
+
+  evaluatePosition(t) {
+    const i = lowerBound(this.#points, (p) => p.time < t)
+    if (i === 0) {
+      return this.#points[0].position
+    }
+    // interpolate between |i - 1| and |i|
+    const p0 = this.#points[i - 1]
+    const p1 = this.#points[i]
+    const t0 = p0.time
+    const t1 = p1.time
+    const q0 = p0.position
+    const q1 = p1.position
+    return vops.add(q0, vops.scale(vops.sub(q1, q0), (t - t0) / (t1 - t0)))
+  }
+}
 
 export class Ephemeris {
   #bodies
@@ -260,19 +308,6 @@ function integrate(acc, state, t, dt) {
       y: state.velocity.y + dvydt * dt,
     }
   }
-}
-
-/**
- * Returns the next state of the system after |dt| seconds.
- * @param {*} bodies
- * @param {number} dt
- * @returns
- */
-function step(bodies, dt) {
-  return bodies.map((body, i) => {
-    const acc = (state) => gravitation(bodies, i, state.position)
-    return {...body, ...integrate(acc, body, 0, dt)}
-  })
 }
 
 function totalEnergy(bodies) {
