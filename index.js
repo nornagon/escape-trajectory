@@ -147,6 +147,7 @@ function draw() {
     ctx.scale(zoom/1e9, zoom/1e9)
     ctx.beginPath()
     let lastPos = {x: 0, y: 0}
+    let lastT = 0
     for (let t = 0; t < tMax; t += 100 * 60 * 8) {
       const q = trajectory.evaluatePosition(t)
       const originQ = originBodyTrajectory.evaluatePosition(t)
@@ -171,6 +172,7 @@ function draw() {
       }
       lastPos.x = q.x - originQ.x
       lastPos.y = q.y - originQ.y
+      lastT = t
     }
     const q = trajectory.evaluatePosition(tMax)
     const originQ = originBodyTrajectory.evaluatePosition(tMax)
@@ -178,7 +180,7 @@ function draw() {
       const dx = q.x - originQ.x - lastPos.x
       const dy = q.y - originQ.y - lastPos.y
       if (dx * dx + dy * dy >= minSubdivisionDistanceSq) {
-        for (let t2 = tMax - 100 * 60 * 8; t2 < tMax; t2 += 100 * 60) {
+        for (let t2 = lastT; t2 < tMax; t2 += 100 * 60) {
           const q2 = trajectory.evaluatePosition(t2)
           const originQ2 = originBodyTrajectory.evaluatePosition(t2)
           ctx.lineTo(q2.x - originQ2.x, q2.y - originQ2.y)
