@@ -1,4 +1,6 @@
 import { Ephemeris } from "./ephemeris.js"
+import { fitCurve } from "./fit-curve.js"
+import { simplify } from "./simplify.js"
 
 let bodies = [
   { name: "Sun", mass: 1.98855e30, position: {x: 0, y: 0}, velocity: {x: 0, y: 0}, radius: 695700e3, color: "#ff0" },
@@ -129,7 +131,78 @@ function draw() {
 
   const originBody = ephemeris.bodies[originBodyIndex]
   const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const tMax = ephemeris.tMax
+  const p = {x: 0, y: 0}
   for (const trajectory of ephemeris.trajectories) {
+    const points = []
+    console.time('evaluatePosition')
+    let poly = 0
+    for (let t = 0; t < tMax; t += 10 * 60) {
+      const q = trajectory.evaluatePosition(t)
+      const originQ = originBodyTrajectory.evaluatePosition(t)
+      points.push({
+        x: q.x - originQ.x + originBody.position.x,
+        y: q.y - originQ.y + originBody.position.y,
+      })
+    }
+    console.timeEnd('evaluatePosition')
+    console.log('poly', poly, 'ms')
+
+    console.time('simplify')
+    const curve = simplify(points, 1e9/(2*zoom))
+    console.timeEnd('simplify')
+    console.log('reduced from', points.length, 'to', curve.length)
+    console.time('draw')
+    if (curve.length) {
+      ctx.save()
+      ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
+      ctx.scale(zoom/1e9, zoom/1e9)
+      ctx.translate(-originBody.position.x, -originBody.position.y)
+      ctx.beginPath()
+      ctx.moveTo(curve[0].x, curve[0].y)
+      for (let i = 1; i < curve.length; i++) {
+        ctx.lineTo(curve[i].x, curve[i].y)
+      }
+      ctx.restore()
+      ctx.stroke()
+    }
+    console.timeEnd('draw')
+
+    /*
+    const points = []
+    console.time('evaluatePosition')
+    for (let t = 0; t < ephemeris.tMax; t += 10 * 60) {
+      const q = trajectory.evaluatePosition(t)
+      const originQ = originBodyTrajectory.evaluatePosition(t)
+      points.push([
+        q.x - originQ.x + originBody.position.x,
+        q.y - originQ.y + originBody.position.y,
+      ])
+    }
+    console.timeEnd('evaluatePosition')
+    console.time('fit')
+    const curve = fitCurve(points, zoom*1e9*2)
+    console.timeEnd('fit')
+    console.log('reduced from', points.length, 'points to', curve.length, 'bezier curves')
+
+    console.time('draw')
+    if (curve.length) {
+      ctx.save()
+      ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
+      ctx.scale(1/1e9, 1/1e9)
+      ctx.translate(-originBody.position.x, -originBody.position.y)
+      ctx.beginPath()
+      ctx.moveTo(curve[0][0][0], curve[0][0][1])
+      for (let i = 0; i < curve.length; i++) {
+        ctx.bezierCurveTo(curve[i][1][0], curve[i][1][1], curve[i][2][0], curve[i][2][1], curve[i][3][0], curve[i][3][1])
+      }
+      ctx.restore()
+      ctx.stroke()
+    }
+    console.timeEnd('draw')
+    */
+
+    /*
     ctx.beginPath()
     let lastPos = null
     let t = 0
@@ -157,6 +230,7 @@ function draw() {
       t += 10 * 60
     }
     ctx.stroke()
+    */
   }
 
   // Draw bodies

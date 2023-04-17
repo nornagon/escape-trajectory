@@ -126,8 +126,16 @@ class Trajectory {
     }
   }
 
+  #lastPolynomial
+  #lastT
   #findPolynomialForInstant(t) {
-    return this.#polynomials[lowerBound(this.#polynomials, t, (p, t) => p.tMax < t)].polynomial
+    if (this.#lastPolynomial && this.#lastT <= t && t <= this.#lastPolynomial.tMax) {
+      return this.#lastPolynomial.polynomial
+    }
+    const p = this.#polynomials[lowerBound(this.#polynomials, t, (p, t) => p.tMax < t)]
+    this.#lastPolynomial = p
+    this.#lastT = t
+    return p.polynomial
   }
 
   evaluatePosition(t) {
