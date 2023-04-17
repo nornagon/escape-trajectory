@@ -101,11 +101,13 @@ canvas.addEventListener("mousedown", event => {
 
   function mouseup(event) {
     canvas.removeEventListener("mousemove", mousemove)
-    canvas.removeEventListener("mouseup", mouseup)
+    window.removeEventListener("mouseup", mouseup)
+    window.removeEventListener("blur", mouseup)
   }
 
   canvas.addEventListener("mousemove", mousemove)
-  canvas.addEventListener("mouseup", mouseup)
+  window.addEventListener("mouseup", mouseup)
+  window.addEventListener("blur", mouseup)
 })
 
 function worldToScreen(pos) {
