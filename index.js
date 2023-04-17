@@ -1,4 +1,5 @@
 import { Ephemeris } from "./ephemeris.js"
+import { cohenSutherlandLineClip } from "./geometry.js"
 
 let bodies = [
   { name: "Sun", mass: 1.98855e30, position: {x: 0, y: 0}, velocity: {x: 0, y: 0}, radius: 695700e3, color: "#ff0" },
@@ -113,8 +114,8 @@ canvas.addEventListener("mousedown", event => {
 function worldToScreen(pos) {
   const originBody = bodies[originBodyIndex]
   return {
-    x: pos.x / 1e9 * zoom - originBody.position.x / 1e9 * zoom + canvas.width / 2 + pan.x,
-    y: pos.y / 1e9 * zoom - originBody.position.y / 1e9 * zoom + canvas.height / 2 + pan.y,
+    x: (pos.x - originBody.position.x) / 1e9 * zoom + canvas.width / 2 + pan.x,
+    y: (pos.y - originBody.position.y) / 1e9 * zoom + canvas.height / 2 + pan.y,
   }
 }
 
@@ -129,19 +130,47 @@ function draw() {
 
   const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
   const tMax = ephemeris.tMax
+  const minSubdivisionDistance = 1e9/zoom * 10
+  const minSubdivisionDistanceSq = minSubdivisionDistance * minSubdivisionDistance
+  function isOnScreen(p1, p2) {
+    return cohenSutherlandLineClip(
+      0, canvas.width, 0, canvas.height,
+      p1.x / 1e9 * zoom + canvas.width / 2 + pan.x,
+      p1.y / 1e9 * zoom + canvas.height / 2 + pan.y,
+      p2.x / 1e9 * zoom + canvas.width / 2 + pan.x,
+      p2.y / 1e9 * zoom + canvas.height / 2 + pan.y,
+    )
+  }
   for (const trajectory of ephemeris.trajectories) {
     ctx.save()
     ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
     ctx.scale(zoom/1e9, zoom/1e9)
     ctx.beginPath()
+    let lastPos = {x: 0, y: 0}
     for (let t = 0; t < tMax; t += 100 * 60 * 8) {
       const q = trajectory.evaluatePosition(t)
       const originQ = originBodyTrajectory.evaluatePosition(t)
       if (t === 0) {
         ctx.moveTo(q.x - originQ.x, q.y - originQ.y)
       } else {
+        // If the current line segment is on screen
+        if (isOnScreen({x: q.x - originQ.x, y: q.y - originQ.y}, lastPos)) {
+          // And the distance between the last point and this point is large enough
+          const dx = q.x - originQ.x - lastPos.x
+          const dy = q.y - originQ.y - lastPos.y
+          if (dx * dx + dy * dy >= minSubdivisionDistanceSq) {
+            // Subdivide again for a smoother line
+            for (let t2 = t - 100 * 60 * 8; t2 < t; t2 += 100 * 60) {
+              const q2 = trajectory.evaluatePosition(t2)
+              const originQ2 = originBodyTrajectory.evaluatePosition(t2)
+              ctx.lineTo(q2.x - originQ2.x, q2.y - originQ2.y)
+            }
+          }
+        }
         ctx.lineTo(q.x - originQ.x, q.y - originQ.y)
       }
+      lastPos.x = q.x - originQ.x
+      lastPos.y = q.y - originQ.y
     }
     const q = trajectory.evaluatePosition(tMax)
     const originQ = originBodyTrajectory.evaluatePosition(tMax)
