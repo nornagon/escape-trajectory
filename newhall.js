@@ -1,3 +1,14 @@
+function memoize(fn, makeKey = JSON.stringify) {
+  const cache = new Map
+  return function (...args) {
+    const key = makeKey(args)
+    if (cache.has(key)) return cache.get(key)
+    const result = fn(...args)
+    cache.set(key, result)
+    return result
+  }
+}
+
 function diag(v) {
   return v.map((x, i) => Array.from({ length: v.length }, (_, j) => i === j ? x : 0))
 }
@@ -16,14 +27,28 @@ function mmul(a, b) {
   });
 }
 
-function dot(a, b) {
+function mmulWithOps(ops, a, b) {
+  if (a[0].length !== b.length) {
+    throw new Error(`Matrices are not compatible for multiplication (a: ${a.length}x${a[0].length}, b: ${b.length}x${b[0].length})`)
+  }
+
+  return a.map((rowA) => {
+    return b[0].map((_, j) => {
+      return rowA.reduce((sum, curr, k) => {
+        return ops.add(sum, ops.scale(b[k][j], curr));
+      }, ops.zero);
+    });
+  });
+}
+
+function dotWithOps(ops, a, b) {
   if (a.length !== b.length) {
     throw new Error(`Vectors are not compatible for dot product (a: ${a.length}, b: ${b.length})`)
   }
 
   return a.reduce((sum, curr, i) => {
-    return sum + curr * b[i];
-  }, 0);
+    return ops.add(sum, ops.scale(b[i], curr));
+  }, ops.zero);
 }
 
 if (typeof require !== 'undefined') {
@@ -106,17 +131,6 @@ function chebyshevU(n, x) {
 function dchebyshevT(n, x) {
   if (n === 0) return 0
   return n * chebyshevU(n - 1, x)
-}
-
-function memoize(fn, makeKey = JSON.stringify) {
-  const cache = {}
-  return function (...args) {
-    const key = makeKey(args)
-    if (cache[key]) return cache[key]
-    const result = fn(...args)
-    cache[key] = result
-    return result
-  }
 }
 
 const chebyshevCoeffs = memoize(function chebyshevCoeffs(n) {
@@ -212,12 +226,12 @@ function newhallC2(degree, divisions, w = 0.4) {
   ]
 }
 
-function newhallC(degree, divisions, w = 0.4) {
+const newhallC = memoize(function (degree, divisions, w = 0.4) {
   return mmul(
     inv(newhallC1(degree, divisions, w)),
     newhallC2(degree, divisions, w)
   )
-}
+}, (degree, divisions, w) => degree*1000 + divisions + w)
 
 // A function that behaves like Mathematica's Table[]
 function table(fn, start, end, step = 1) {
@@ -241,14 +255,14 @@ function scale(a, s) {
   return a.map((x) => x * s)
 }
 
-function newhallMonomialC(degree, divisions, w = 0.4) {
+const newhallMonomialC = memoize(function (degree, divisions, w = 0.4) {
   const c = newhallC(degree, divisions, w)
 
   return table((k) =>
     sum((n) => scale(c[n], chebyshevCoeff(n, k)), (a, b) => a.map((x, i) => x + b[i]), 0, degree),
     0, degree
   )
-}
+}, (degree, divisions, w) => degree*1000 + divisions + w)
 
 export function newhallApproximationInChebyshevBasis(degree, divisions, q, v, tMin, tMax) {
   if (q.length !== divisions + 1) throw new Error('q length mismatch')
@@ -270,20 +284,20 @@ export function newhallApproximationInChebyshevBasis(degree, divisions, q, v, tM
   }
 }
 
-function homogeneousCoefficients(degree, divisions, qv) {
-  const cRow = newhallC(degree, divisions)[degree]
-  const errorEstimate = dot(cRow, qv)
+function homogeneousCoefficients(degree, divisions, ops, qv) {
+  const cRow = newhallC(degree, divisions)[degree - 1]
+  const errorEstimate = dotWithOps(ops, cRow, qv)
   return {
-    coefficients: mmul(newhallMonomialC(degree, divisions), transpose([qv])),
+    coefficients: mmulWithOps(ops, newhallMonomialC(degree - 1, divisions), transpose([qv])),
     errorEstimate,
   }
 }
 
-function dehomogenize(coefficients, scale, origin) {
-  return new Polynomial(coefficients.map((x, i) => x * scale ** i), origin)
+function dehomogenize(ops, coefficients, scale, origin) {
+  return new Polynomial(ops, coefficients.map((x, i) => ops.scale(x, scale ** i)), origin)
 }
 
-export function newhallApproximationInMonomialBasis(degree, divisions, q, v, tMin, tMax) {
+export function newhallApproximationInMonomialBasis(degree, divisions, ops, q, v, tMin, tMax) {
   if (q.length !== divisions + 1) throw new Error('q length mismatch')
   if (v.length !== divisions + 1) throw new Error('v length mismatch')
 
@@ -292,28 +306,31 @@ export function newhallApproximationInMonomialBasis(degree, divisions, q, v, tMi
   const qv = Array(2 * divisions + 2)
   for (let i = 0, j = 2 * divisions; i < divisions + 1 && j >= 0; ++i, j -= 2) {
     qv[j] = q[i]
-    qv[j + 1] = v[i] * durationOverTwo
+    qv[j + 1] = ops.scale(v[i], durationOverTwo)
   }
 
   const tMid = (tMin + tMax) / 2
-  const { coefficients, errorEstimate } = homogeneousCoefficients(degree, divisions, qv)
+  const { coefficients, errorEstimate } = homogeneousCoefficients(degree, divisions, ops, qv)
   return {
-    polynomial: dehomogenize(coefficients, 1 / durationOverTwo, tMid),
+    polynomial: dehomogenize(ops, transpose(coefficients)[0], 1 / durationOverTwo, tMid),
     errorEstimate,
   }
 }
 
 class Polynomial {
+  #ops
   #coefficients
   #origin
-  constructor(coefficients, origin) {
+
+  constructor(ops, coefficients, origin) {
+    this.#ops = ops
     this.#coefficients = coefficients
     this.#origin = origin
   }
 
   evaluate(arg) {
     const t = arg - this.#origin
-    return this.#coefficients.reduce((acc, c, i) => acc + c * t ** i, 0)
+    return this.#coefficients.reduce((acc, c, i) => this.#ops.add(acc, this.#ops.scale(c, t ** i)), this.#ops.zero)
   }
 }
 

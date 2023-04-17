@@ -1,6 +1,4 @@
-import { newhallApproximationInChebyshevBasis } from "./newhall.js"
-// n-body simulation with runge-kutta 4th-order integrator
-const G = 6.67408e-11
+import { Ephemeris } from "./ephemeris.js"
 
 let bodies = [
   { name: "Sun", mass: 1.98855e30, position: {x: 0, y: 0}, velocity: {x: 0, y: 0}, radius: 695700e3, color: "#ff0" },
@@ -28,96 +26,17 @@ let bodies = [
   { name: "Ceres", mass: 9.393e20, position: {x: 4.14e11, y: 0}, velocity: {x: 0, y: 17.9e3}, radius: 469.73e3, color: "#f0f" },
 ]
 
-const dt = 8640
-const stepsDivisor = 10
+const ephemeris = new Ephemeris({
+  bodies,
+  time: 0,
+  // TODO: for some reason our integrator moves 8 times faster than it should
+  // for now just hack by dividing the time. ... but this is a bug.
+  step: 10 * 60 / 8,
+  tolerance: 1e-3,
+})
+window.ephemeris = ephemeris
 
-function gravitation(bodies, i, position) {
-  let ax = 0
-  let ay = 0
-
-  bodies.forEach((other, j) => {
-    if (i === j) return
-
-    const dx = other.position.x - position.x
-    const dy = other.position.y - position.y
-    const r = Math.sqrt(dx * dx + dy * dy)
-    const a = G * other.mass / (r * r)
-
-    ax += a * dx / r
-    ay += a * dy / r
-  })
-
-  return {x: ax, y: ay}
-}
-
-// based on Glenn Fiedler's tutorial at http://gafferongames.com/game-physics/integration-basics/
-function evaluate(acc, initial, t, dt, d) {
-  const state = {
-    position: {
-      x: initial.position.x + d.dp.x * dt,
-      y: initial.position.y + d.dp.y * dt,
-    },
-    velocity: {
-      x: initial.velocity.x + d.dv.x * dt,
-      y: initial.velocity.y + d.dv.y * dt,
-    }
-  }
-
-  return {
-    dp: state.velocity,
-    dv: acc(state, t)
-  }
-}
-function integrate(acc, state, t, dt) {
-  const a = evaluate(acc, state, t, 0, { dp: {x: 0, y: 0}, dv: {x: 0, y: 0} })
-  const b = evaluate(acc, state, t, dt*0.5, a)
-  const c = evaluate(acc, state, t, dt*0.5, b)
-  const d = evaluate(acc, state, t, dt, c)
-
-  const dpxdt = (a.dp.x + 2 * (b.dp.x + c.dp.x) + d.dp.x) / 6
-  const dpydt = (a.dp.y + 2 * (b.dp.y + c.dp.y) + d.dp.y) / 6
-  const dvxdt = (a.dv.x + 2 * (b.dv.x + c.dv.x) + d.dv.x) / 6
-  const dvydt = (a.dv.y + 2 * (b.dv.y + c.dv.y) + d.dv.y) / 6
-
-  return {
-    position: {
-      x: state.position.x + dpxdt * dt,
-      y: state.position.y + dpydt * dt,
-    },
-    velocity: {
-      x: state.velocity.x + dvxdt * dt,
-      y: state.velocity.y + dvydt * dt,
-    }
-  }
-}
-
-function step(bodies, dt) {
-  return bodies.map((body, i) => {
-    const acc = (state) => gravitation(bodies, i, state.position)
-    return {...body, ...integrate(acc, body, 0, dt)}
-  })
-}
-
-function totalEnergy(bodies) {
-  let kinetic = 0
-  let potential = 0
-
-  bodies.forEach((body, i) => {
-    kinetic += 0.5 * body.mass * (body.velocity.x * body.velocity.x + body.velocity.y * body.velocity.y)
-
-    bodies.forEach((other, j) => {
-      if (i === j) return
-
-      const dx = other.position.x - body.position.x
-      const dy = other.position.y - body.position.y
-      const r = Math.sqrt(dx * dx + dy * dy)
-
-      potential -= G * body.mass * other.mass / r
-    })
-  })
-
-  return kinetic + potential
-}
+ephemeris.prolong(180 * 24 * 60 * 60 / 8)
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
@@ -149,6 +68,8 @@ canvas.addEventListener("wheel", event => {
   pan.y = event.offsetY - canvas.height / 2 - y * k
 
   zoom *= k
+
+  requestDraw()
 })
 
 canvas.addEventListener("mousedown", event => {
@@ -167,6 +88,8 @@ canvas.addEventListener("mousedown", event => {
       originBodyIndex = bodies.indexOf(body)
       pan.x = 0
       pan.y = 0
+
+      requestDraw()
       return
     }
   }
@@ -174,6 +97,8 @@ canvas.addEventListener("mousedown", event => {
   function mousemove(event) {
     pan.x = event.offsetX - canvas.width / 2 - x0
     pan.y = event.offsetY - canvas.height / 2 - y0
+
+    requestDraw()
   }
 
   function mouseup(event) {
@@ -193,31 +118,7 @@ function worldToScreen(pos) {
   }
 }
 
-const divisions = 8
-class Trajectory {
-  #positions = []
-  #velocities = []
-  constructor() {}
-
-  append(time, position, velocity) {
-    this.#positions.push(position)
-    this.#velocities.push(velocity)
-    if (this.#positions.length === divisions + 1) {
-      this.computeBestNewhallApproximation(time, this.#positions, this.#velocities)
-    }
-    this.#positions[0] = this.#positions[divisions]
-    this.#positions.length = 1
-    this.#velocities[0] = this.#velocities[divisions]
-    this.#velocities.length = 1
-  }
-
-  computeBestNewhallApproximation(t, q, v) {
-  }
-}
-
-let trajectories = []
-
-function draw(bodies) {
+function draw() {
   const start = performance.now()
   ctx.save()
   ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -226,18 +127,21 @@ function draw(bodies) {
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
   ctx.lineWidth = 1
 
-  const originBody = bodies[originBodyIndex]
-  const originBodyTrajectory = trajectories[originBodyIndex]
-  for (let trajectory of trajectories) {
+  const originBody = ephemeris.bodies[originBodyIndex]
+  const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  for (const trajectory of ephemeris.trajectories) {
     ctx.beginPath()
     let lastPos = null
-    for (let i = 0; i < trajectory.length; i++) {
+    let t = 0
+    while (t < ephemeris.tMax) {
+      const q = trajectory.evaluatePosition(t)
+      const originQ = originBodyTrajectory.evaluatePosition(t)
       const relativePoint = {
-        x: trajectory[i].x - originBodyTrajectory[i].x + originBody.position.x,
-        y: trajectory[i].y - originBodyTrajectory[i].y + originBody.position.y,
+        x: q.x - originQ.x + originBody.position.x,
+        y: q.y - originQ.y + originBody.position.y,
       }
       const screenPos = worldToScreen(relativePoint)
-      if (i === 0) {
+      if (t === 0) {
         ctx.moveTo(screenPos.x, screenPos.y)
         lastPos = screenPos
       } else {
@@ -245,15 +149,18 @@ function draw(bodies) {
         const dx = screenPos.x - lastPos.x
         const dy = screenPos.y - lastPos.y
         const r = dx * dx + dy * dy
-        if (r < 10) continue
-        ctx.lineTo(screenPos.x, screenPos.y)
-        lastPos = screenPos
+        if (r >= 10) {
+          ctx.lineTo(screenPos.x, screenPos.y)
+          lastPos = screenPos
+        }
       }
+      t += 10 * 60
     }
     ctx.stroke()
   }
 
-  for (let body of bodies) {
+  // Draw bodies
+  for (let body of ephemeris.bodies) {
     ctx.fillStyle = body.color
     const screenPos = worldToScreen(body.position)
     ctx.beginPath()
@@ -268,31 +175,27 @@ function draw(bodies) {
   }
   ctx.restore()
 
+  // Draw info
   ctx.fillStyle = 'white'
-  ctx.fillText("Total energy: " + totalEnergy(bodies).toExponential(4), 10, 20)
+  //ctx.fillText("Total energy: " + totalEnergy(bodies).toExponential(4), 10, 20)
   const end = performance.now()
   const drawTime = end - start
   document.querySelector('#draw-time').textContent = drawTime.toFixed(2) + ' ms'
 }
 
 let raf = null
-function loop() {
-  const start = performance.now()
-  for (let i = 0; i < stepsDivisor; i++) {
-    bodies = step(bodies, dt / stepsDivisor)
-
-    bodies.forEach((body, i) => {
-      if (!trajectories[i]) trajectories[i] = []
-      trajectories[i].push(body.position)
-
-      // Limit trajectory length
-      if (trajectories[i].length > 100000) trajectories[i].shift()
+function requestDraw() {
+  if (!raf) {
+    raf = requestAnimationFrame(() => {
+      raf = null
+      draw()
     })
   }
-  const end = performance.now()
-  const calcTime = end - start
-  document.querySelector('#calc-time').textContent = calcTime.toFixed(2) + ' ms'
-  draw(bodies)
+}
+
+/*
+function loop() {
+  draw()
   raf = requestAnimationFrame(loop)
 }
 function stopLoop() {
@@ -304,4 +207,5 @@ start.onclick = () => {
   if (!raf) loop()
 }
 document.querySelector('#stop').onclick = stopLoop
+*/
 draw(bodies)
