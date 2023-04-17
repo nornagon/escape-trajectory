@@ -174,6 +174,17 @@ function draw() {
     }
     const q = trajectory.evaluatePosition(tMax)
     const originQ = originBodyTrajectory.evaluatePosition(tMax)
+    if (isOnScreen({x: q.x - originQ.x, y: q.y - originQ.y}, lastPos)) {
+      const dx = q.x - originQ.x - lastPos.x
+      const dy = q.y - originQ.y - lastPos.y
+      if (dx * dx + dy * dy >= minSubdivisionDistanceSq) {
+        for (let t2 = tMax - 100 * 60 * 8; t2 < tMax; t2 += 100 * 60) {
+          const q2 = trajectory.evaluatePosition(t2)
+          const originQ2 = originBodyTrajectory.evaluatePosition(t2)
+          ctx.lineTo(q2.x - originQ2.x, q2.y - originQ2.y)
+        }
+      }
+    }
     ctx.lineTo(q.x - originQ.x, q.y - originQ.y)
     ctx.restore()
     ctx.stroke()
