@@ -127,42 +127,36 @@ function draw() {
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
   ctx.lineWidth = 1
 
-  const originBody = ephemeris.bodies[originBodyIndex]
   const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const tMax = ephemeris.tMax
   for (const trajectory of ephemeris.trajectories) {
+    ctx.save()
+    ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
+    ctx.scale(zoom/1e9, zoom/1e9)
     ctx.beginPath()
-    let lastPos = null
-    let t = 0
-    while (t < ephemeris.tMax) {
+    for (let t = 0; t < tMax; t += 100 * 60) {
       const q = trajectory.evaluatePosition(t)
       const originQ = originBodyTrajectory.evaluatePosition(t)
-      const relativePoint = {
-        x: q.x - originQ.x + originBody.position.x,
-        y: q.y - originQ.y + originBody.position.y,
-      }
-      const screenPos = worldToScreen(relativePoint)
       if (t === 0) {
-        ctx.moveTo(screenPos.x, screenPos.y)
-        lastPos = screenPos
+        ctx.moveTo(q.x - originQ.x, q.y - originQ.y)
       } else {
-        // Skip points that are too close to the previous point
-        const dx = screenPos.x - lastPos.x
-        const dy = screenPos.y - lastPos.y
-        const r = dx * dx + dy * dy
-        if (r >= 10) {
-          ctx.lineTo(screenPos.x, screenPos.y)
-          lastPos = screenPos
-        }
+        ctx.lineTo(q.x - originQ.x, q.y - originQ.y)
       }
-      t += 10 * 60
     }
+    const q = trajectory.evaluatePosition(tMax)
+    const originQ = originBodyTrajectory.evaluatePosition(tMax)
+    ctx.lineTo(q.x - originQ.x, q.y - originQ.y)
+    ctx.restore()
     ctx.stroke()
   }
 
   // Draw bodies
-  for (let body of ephemeris.bodies) {
+  for (let i = 0; i < ephemeris.bodies.length; i++) {
+    const body = ephemeris.bodies[i]
+    const trajectory = ephemeris.trajectories[i]
     ctx.fillStyle = body.color
-    const screenPos = worldToScreen(body.position)
+    const pos = trajectory.evaluatePosition(tMax)
+    const screenPos = worldToScreen(pos)
     ctx.beginPath()
     ctx.arc(screenPos.x, screenPos.y, Math.max(2, body.radius / 1e9 * zoom), 0, 2 * Math.PI)
     ctx.fill()
@@ -181,6 +175,7 @@ function draw() {
   const end = performance.now()
   const drawTime = end - start
   document.querySelector('#draw-time').textContent = drawTime.toFixed(2) + ' ms'
+  document.querySelector('#zoom-level').textContent = zoom.toFixed(2) + 'x'
 }
 
 let raf = null
@@ -193,19 +188,4 @@ function requestDraw() {
   }
 }
 
-/*
-function loop() {
-  draw()
-  raf = requestAnimationFrame(loop)
-}
-function stopLoop() {
-  cancelAnimationFrame(raf)
-  raf = null
-}
-
-start.onclick = () => {
-  if (!raf) loop()
-}
-document.querySelector('#stop').onclick = stopLoop
-*/
 draw(bodies)
