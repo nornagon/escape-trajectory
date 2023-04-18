@@ -1,7 +1,7 @@
 import { Ephemeris } from "./ephemeris.js"
 import { cohenSutherlandLineClip } from "./geometry.js"
 
-let bodies = [
+const initialBodies = [
   { name: "Sun", mass: 1.98855e30, position: {x: 0, y: 0}, velocity: {x: 0, y: 0}, radius: 695700e3, color: "#ff0" },
 
   { name: "Mercury", mass: 3.3011e23, position: {x: 5.791e10, y: 0}, velocity: {x: 0, y: 47.362e3}, radius: 2439.7e3, color: "#aaa" },
@@ -28,7 +28,7 @@ let bodies = [
 ]
 
 const ephemeris = new Ephemeris({
-  bodies,
+  bodies: initialBodies,
   time: 0,
   step: 10 * 60,
   tolerance: 1e-3,
@@ -54,7 +54,6 @@ function defaultWheelDelta(event) {
   return -event.deltaY * (event.deltaMode === 1 ? 0.05 : event.deltaMode ? 1 : 0.002) * (event.ctrlKey ? 10 : 1);
 }
 
-// Pan and zoom, based on d3-zoom
 canvas.addEventListener("wheel", event => {
   event.preventDefault()
 
@@ -79,14 +78,14 @@ canvas.addEventListener("mousedown", event => {
   const x0 = event.offsetX - canvas.width / 2 - pan.x
   const y0 = event.offsetY - canvas.height / 2 - pan.y
 
-  for (const body of bodies) {
+  for (const body of ephemeris.bodies) {
     const screenPos = worldToScreen(body.position)
 
     const dx = screenPos.x - event.offsetX
     const dy = screenPos.y - event.offsetY
     const r = Math.sqrt(dx * dx + dy * dy)
     if (r < 10) {
-      originBodyIndex = bodies.indexOf(body)
+      originBodyIndex = ephemeris.bodies.indexOf(body)
       pan.x = 0
       pan.y = 0
 
@@ -137,17 +136,20 @@ canvas.addEventListener("mousedown", event => {
   window.addEventListener("blur", mouseup)
 })
 
-function worldToScreenWithoutOrigin(pos) {
-  return {
-    x: pos.x / 1e9 * zoom + canvas.width / 2 + pan.x,
-    y: pos.y / 1e9 * zoom + canvas.height / 2 + pan.y,
-  }
-}
+
 function worldToScreen(pos) {
   const originBody = ephemeris.bodies[originBodyIndex]
   return {
     x: (pos.x - originBody.position.x) / 1e9 * zoom + canvas.width / 2 + pan.x,
     y: (pos.y - originBody.position.y) / 1e9 * zoom + canvas.height / 2 + pan.y,
+  }
+}
+// This version doesn't subtract the origin body's position, so it can be used
+// when drawing trajectories.
+function worldToScreenWithoutOrigin(pos) {
+  return {
+    x: pos.x / 1e9 * zoom + canvas.width / 2 + pan.x,
+    y: pos.y / 1e9 * zoom + canvas.height / 2 + pan.y,
   }
 }
 
@@ -299,4 +301,4 @@ function requestDraw() {
   }
 }
 
-draw(bodies)
+draw()
