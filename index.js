@@ -72,28 +72,7 @@ canvas.addEventListener("wheel", event => {
   requestDraw()
 })
 
-canvas.addEventListener("mousedown", event => {
-  event.preventDefault()
-
-  const x0 = event.offsetX - canvas.width / 2 - pan.x
-  const y0 = event.offsetY - canvas.height / 2 - pan.y
-
-  for (const body of ephemeris.bodies) {
-    const screenPos = worldToScreen(body.position)
-
-    const dx = screenPos.x - event.offsetX
-    const dy = screenPos.y - event.offsetY
-    const r = Math.sqrt(dx * dx + dy * dy)
-    if (r < 10) {
-      originBodyIndex = ephemeris.bodies.indexOf(body)
-      pan.x = 0
-      pan.y = 0
-
-      requestDraw()
-      return
-    }
-  }
-
+function findNearestTrajectory(event) {
   const tMax = ephemeris.tMax
   let closestP = 0
   let closestD = Infinity
@@ -116,11 +95,37 @@ canvas.addEventListener("mousedown", event => {
       t: closestP.t,
     }
     requestDraw()
+    return true
+  }
+}
+
+canvas.addEventListener("mousedown", event => {
+  event.preventDefault()
+
+  const x0 = event.offsetX - canvas.width / 2 - pan.x
+  const y0 = event.offsetY - canvas.height / 2 - pan.y
+
+  for (const body of ephemeris.bodies) {
+    const screenPos = worldToScreen(body.position)
+
+    const dx = screenPos.x - event.offsetX
+    const dy = screenPos.y - event.offsetY
+    const r = Math.sqrt(dx * dx + dy * dy)
+    if (r < 10) {
+      originBodyIndex = ephemeris.bodies.indexOf(body)
+      pan.x = 0
+      pan.y = 0
+
+      requestDraw()
+      return
+    }
   }
 
+  let dragged = false
   function mousemove(event) {
     pan.x = event.offsetX - canvas.width / 2 - x0
     pan.y = event.offsetY - canvas.height / 2 - y0
+    dragged = true
 
     requestDraw()
   }
@@ -129,6 +134,9 @@ canvas.addEventListener("mousedown", event => {
     canvas.removeEventListener("mousemove", mousemove)
     window.removeEventListener("mouseup", mouseup)
     window.removeEventListener("blur", mouseup)
+    if (!dragged) {
+      findNearestTrajectory(event)
+    }
   }
 
   canvas.addEventListener("mousemove", mousemove)
