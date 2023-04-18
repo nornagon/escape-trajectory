@@ -35,7 +35,7 @@ const ephemeris = new Ephemeris({
 })
 window.ephemeris = ephemeris
 
-ephemeris.prolong(180 * 24 * 60 * 60)
+ephemeris.prolong(365.25 * 24 * 60 * 60)
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
@@ -47,6 +47,8 @@ let pan = {x: 0, y: 0}
 let zoom = 1
 
 let originBodyIndex = 0
+
+let trajectoryPoint = null
 
 function defaultWheelDelta(event) {
   return -event.deltaY * (event.deltaMode === 1 ? 0.05 : event.deltaMode ? 1 : 0.002) * (event.ctrlKey ? 10 : 1);
@@ -93,6 +95,30 @@ canvas.addEventListener("mousedown", event => {
     }
   }
 
+  const tMax = ephemeris.tMax
+  let closestP = 0
+  let closestD = Infinity
+  let closestI = -1
+  ephemeris.trajectories.forEach((trajectory, i) => {
+    // Find the closest point on |trajectory|
+    for (const point of trajectoryPoints(trajectory, 0, tMax)) {
+      const p = worldToScreenWithoutOrigin(point)
+      const d = Math.hypot(p.x - event.offsetX, p.y - event.offsetY)
+      if (d < closestD) {
+        closestD = d
+        closestP = point
+        closestI = i
+      }
+    }
+  })
+  if (closestD < 10) {
+    trajectoryPoint = {
+      i: closestI,
+      t: closestP.t,
+    }
+    requestDraw()
+  }
+
   function mousemove(event) {
     pan.x = event.offsetX - canvas.width / 2 - x0
     pan.y = event.offsetY - canvas.height / 2 - y0
@@ -111,11 +137,97 @@ canvas.addEventListener("mousedown", event => {
   window.addEventListener("blur", mouseup)
 })
 
+function worldToScreenWithoutOrigin(pos) {
+  return {
+    x: pos.x / 1e9 * zoom + canvas.width / 2 + pan.x,
+    y: pos.y / 1e9 * zoom + canvas.height / 2 + pan.y,
+  }
+}
 function worldToScreen(pos) {
-  const originBody = bodies[originBodyIndex]
+  const originBody = ephemeris.bodies[originBodyIndex]
   return {
     x: (pos.x - originBody.position.x) / 1e9 * zoom + canvas.width / 2 + pan.x,
     y: (pos.y - originBody.position.y) / 1e9 * zoom + canvas.height / 2 + pan.y,
+  }
+}
+
+function isOnScreen(p1, p2) {
+  return cohenSutherlandLineClip(
+    0, canvas.width, 0, canvas.height,
+    p1.x / 1e9 * zoom + canvas.width / 2 + pan.x,
+    p1.y / 1e9 * zoom + canvas.height / 2 + pan.y,
+    p2.x / 1e9 * zoom + canvas.width / 2 + pan.x,
+    p2.y / 1e9 * zoom + canvas.height / 2 + pan.y,
+  )
+}
+
+function* trajectoryPoints(trajectory, t0, t1) {
+  const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const minSubdivisionDistance = 1e9/zoom * 10
+  const minSubdivisionDistanceSq = minSubdivisionDistance * minSubdivisionDistance
+  let lastPos = null
+  let lastT = t0
+  for (let t = t0; t < t1; t += 100 * 60 * 8) {
+    const q = trajectory.evaluatePosition(t)
+    const originQ = originBodyTrajectory.evaluatePosition(t)
+
+    const p = {
+      x: q.x - originQ.x,
+      y: q.y - originQ.y,
+      t,
+    }
+
+    if (t !== t0) {
+      if (isOnScreen(lastPos, p)) {
+        const dx = p.x - lastPos.x
+        const dy = p.y - lastPos.y
+        const dSq = dx * dx + dy * dy
+        if (dSq > minSubdivisionDistanceSq) {
+          for (let ts = t - 100 * 60 * 8; ts < t; ts += 100 * 60) {
+            const q = trajectory.evaluatePosition(ts)
+            const originQ = originBodyTrajectory.evaluatePosition(ts)
+
+            const p = {
+              x: q.x - originQ.x,
+              y: q.y - originQ.y,
+              t: ts
+            }
+
+            yield p
+          }
+        }
+      }
+    }
+
+    yield p
+    lastPos = p
+    lastT = t
+  }
+  const q = trajectory.evaluatePosition(t1)
+  const originQ = originBodyTrajectory.evaluatePosition(t1)
+  if (isOnScreen({x: q.x - originQ.x, y: q.y - originQ.y}, lastPos)) {
+    const dx = q.x - originQ.x - lastPos.x
+    const dy = q.y - originQ.y - lastPos.y
+    if (dx * dx + dy * dy >= minSubdivisionDistanceSq) {
+      for (let ts = lastT; ts < t1; ts += 100 * 60) {
+        const q2 = trajectory.evaluatePosition(ts)
+        const originQ2 = originBodyTrajectory.evaluatePosition(ts)
+        yield {x: q2.x - originQ2.x, y: q2.y - originQ2.y, t: ts}
+      }
+    }
+  }
+  yield {x: q.x - originQ.x, y: q.y - originQ.y, t: t1}
+}
+
+function polyline(generator) {
+  let first = true
+  for (const p of generator) {
+    if (first) {
+      ctx.moveTo(p.x, p.y)
+      first = false
+    } else {
+      ctx.lineTo(p.x, p.y)
+    }
   }
 }
 
@@ -128,68 +240,25 @@ function draw() {
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
   ctx.lineWidth = 1
 
-  const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
   const tMax = ephemeris.tMax
-  const minSubdivisionDistance = 1e9/zoom * 10
-  const minSubdivisionDistanceSq = minSubdivisionDistance * minSubdivisionDistance
-  function isOnScreen(p1, p2) {
-    return cohenSutherlandLineClip(
-      0, canvas.width, 0, canvas.height,
-      p1.x / 1e9 * zoom + canvas.width / 2 + pan.x,
-      p1.y / 1e9 * zoom + canvas.height / 2 + pan.y,
-      p2.x / 1e9 * zoom + canvas.width / 2 + pan.x,
-      p2.y / 1e9 * zoom + canvas.height / 2 + pan.y,
-    )
-  }
   for (const trajectory of ephemeris.trajectories) {
     ctx.save()
     ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
     ctx.scale(zoom/1e9, zoom/1e9)
     ctx.beginPath()
-    let lastPos = {x: 0, y: 0}
-    let lastT = 0
-    for (let t = 0; t < tMax; t += 100 * 60 * 8) {
-      const q = trajectory.evaluatePosition(t)
-      const originQ = originBodyTrajectory.evaluatePosition(t)
-      if (t === 0) {
-        ctx.moveTo(q.x - originQ.x, q.y - originQ.y)
-      } else {
-        // If the current line segment is on screen
-        if (isOnScreen({x: q.x - originQ.x, y: q.y - originQ.y}, lastPos)) {
-          // And the distance between the last point and this point is large enough
-          const dx = q.x - originQ.x - lastPos.x
-          const dy = q.y - originQ.y - lastPos.y
-          if (dx * dx + dy * dy >= minSubdivisionDistanceSq) {
-            // Subdivide again for a smoother line
-            for (let t2 = t - 100 * 60 * 8; t2 < t; t2 += 100 * 60) {
-              const q2 = trajectory.evaluatePosition(t2)
-              const originQ2 = originBodyTrajectory.evaluatePosition(t2)
-              ctx.lineTo(q2.x - originQ2.x, q2.y - originQ2.y)
-            }
-          }
-        }
-        ctx.lineTo(q.x - originQ.x, q.y - originQ.y)
-      }
-      lastPos.x = q.x - originQ.x
-      lastPos.y = q.y - originQ.y
-      lastT = t
-    }
-    const q = trajectory.evaluatePosition(tMax)
-    const originQ = originBodyTrajectory.evaluatePosition(tMax)
-    if (isOnScreen({x: q.x - originQ.x, y: q.y - originQ.y}, lastPos)) {
-      const dx = q.x - originQ.x - lastPos.x
-      const dy = q.y - originQ.y - lastPos.y
-      if (dx * dx + dy * dy >= minSubdivisionDistanceSq) {
-        for (let t2 = lastT; t2 < tMax; t2 += 100 * 60) {
-          const q2 = trajectory.evaluatePosition(t2)
-          const originQ2 = originBodyTrajectory.evaluatePosition(t2)
-          ctx.lineTo(q2.x - originQ2.x, q2.y - originQ2.y)
-        }
-      }
-    }
-    ctx.lineTo(q.x - originQ.x, q.y - originQ.y)
+    polyline(trajectoryPoints(trajectory, 0, tMax))
     ctx.restore()
     ctx.stroke()
+  }
+
+  if (trajectoryPoint) {
+    const q = ephemeris.trajectories[trajectoryPoint.i].evaluatePosition(trajectoryPoint.t)
+    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryPoint.t)
+    const screenPos = worldToScreenWithoutOrigin({x: q.x - originQ.x, y: q.y - originQ.y})
+    ctx.fillStyle = 'white'
+    ctx.beginPath()
+    ctx.arc(screenPos.x, screenPos.y, 4, 0, 2 * Math.PI)
+    ctx.fill()
   }
 
   // Draw bodies
