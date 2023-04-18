@@ -315,4 +315,8 @@ step10.onclick = () => {
   requestDraw()
 }
 
+step100.onclick = () => {
+  ephemeris.prolong(ephemeris.tMax + ephemeris.step * 100)
+  requestDraw()
+}
 draw()
