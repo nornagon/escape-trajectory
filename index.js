@@ -189,55 +189,39 @@ function clipPoint(p) {
   return sx >= 0 && sx < width && sy >= 0 && sy < height
 }
 
-function* trajectoryPoints(trajectory, t0, t1) {
+function trajectoryPosInFrame(trajectory, t) {
   const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const q = trajectory.evaluatePosition(t)
+  const originQ = originBodyTrajectory.evaluatePosition(t)
+
+  return {
+    x: q.x - originQ.x,
+    y: q.y - originQ.y,
+    t,
+  }
+}
+
+function* trajectorySegment(trajectory, t0, t1) {
   const minSubdivisionDistance = 1e9/zoom * 10
-  const minSubdivisionDistanceSq = minSubdivisionDistance * minSubdivisionDistance
-  let lastPos = null
-  let lastT = t0
-  for (let t = t0; t < t1; t += 100 * 60 * 8) {
-    const q = trajectory.evaluatePosition(t)
-    const originQ = originBodyTrajectory.evaluatePosition(t)
 
-    const p = {
-      x: q.x - originQ.x,
-      y: q.y - originQ.y,
-      t,
-    }
+  const p0 = trajectoryPosInFrame(trajectory, t0)
+  const p1 = trajectoryPosInFrame(trajectory, t1)
 
-    if (t !== t0) {
-      if (clipLine(lastPos, p)) {
-        const dx = p.x - lastPos.x
-        const dy = p.y - lastPos.y
-        if (dx * dx + dy * dy > minSubdivisionDistanceSq) {
-          for (let ts = lastT; ts < t; ts += 100 * 60) {
-            const q = trajectory.evaluatePosition(ts)
-            const originQ = originBodyTrajectory.evaluatePosition(ts)
-            yield { x: q.x - originQ.x, y: q.y - originQ.y, t: ts }
-          }
-        }
-      }
-    }
-
-    yield p
-    lastPos = p
-    lastT = t
+  if (clipLine(p0, p1) && Math.hypot(p1.x - p0.x, p1.y - p0.y) > minSubdivisionDistance) {
+    const tMid = (t0 + t1) / 2
+    yield* trajectorySegment(trajectory, t0, tMid)
+    yield* trajectorySegment(trajectory, tMid, t1)
+  } else {
+    yield p0
   }
-  const q = trajectory.evaluatePosition(t1)
-  const originQ = originBodyTrajectory.evaluatePosition(t1)
-  const p = {x: q.x - originQ.x, y: q.y - originQ.y, t: t1}
-  if (clipLine(lastPos, p)) {
-    const dx = p.x - lastPos.x
-    const dy = p.y - lastPos.y
-    if (dx * dx + dy * dy >= minSubdivisionDistanceSq) {
-      for (let ts = lastT; ts < t1; ts += 100 * 60) {
-        const q = trajectory.evaluatePosition(ts)
-        const originQ = originBodyTrajectory.evaluatePosition(ts)
-        yield {x: q.x - originQ.x, y: q.y - originQ.y, t: ts}
-      }
-    }
+}
+
+function* trajectoryPoints(trajectory, t0, t1, step = 100 * 60 * 8) {
+  for (let t = t0; t < t1; t += step) {
+    yield* trajectorySegment(trajectory, t, Math.min(t + step, t1))
   }
-  yield p
+
+  yield trajectoryPosInFrame(trajectory, t1)
 }
 
 function polyline(generator) {
