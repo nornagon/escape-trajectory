@@ -153,14 +153,22 @@ function worldToScreenWithoutOrigin(pos) {
   }
 }
 
-function isOnScreen(p1, p2) {
+function clipLine(p1, p2) {
+  const { width, height } = canvas
   return cohenSutherlandLineClip(
-    0, canvas.width, 0, canvas.height,
-    p1.x / 1e9 * zoom + canvas.width / 2 + pan.x,
-    p1.y / 1e9 * zoom + canvas.height / 2 + pan.y,
-    p2.x / 1e9 * zoom + canvas.width / 2 + pan.x,
-    p2.y / 1e9 * zoom + canvas.height / 2 + pan.y,
+    0, width, 0, height,
+    p1.x / 1e9 * zoom + width / 2 + pan.x,
+    p1.y / 1e9 * zoom + height / 2 + pan.y,
+    p2.x / 1e9 * zoom + width / 2 + pan.x,
+    p2.y / 1e9 * zoom + height / 2 + pan.y,
   )
+}
+
+function clipPoint(p) {
+  const { width, height } = canvas
+  const sx = p.x / 1e9 * zoom + width / 2 + pan.x
+  const sy = p.y / 1e9 * zoom + height / 2 + pan.y
+  return sx >= 0 && sx < width && sy >= 0 && sy < height
 }
 
 function* trajectoryPoints(trajectory, t0, t1) {
@@ -180,22 +188,14 @@ function* trajectoryPoints(trajectory, t0, t1) {
     }
 
     if (t !== t0) {
-      if (isOnScreen(lastPos, p)) {
+      if (clipLine(lastPos, p)) {
         const dx = p.x - lastPos.x
         const dy = p.y - lastPos.y
-        const dSq = dx * dx + dy * dy
-        if (dSq > minSubdivisionDistanceSq) {
-          for (let ts = t - 100 * 60 * 8; ts < t; ts += 100 * 60) {
+        if (dx * dx + dy * dy > minSubdivisionDistanceSq) {
+          for (let ts = lastT; ts < t; ts += 100 * 60) {
             const q = trajectory.evaluatePosition(ts)
             const originQ = originBodyTrajectory.evaluatePosition(ts)
-
-            const p = {
-              x: q.x - originQ.x,
-              y: q.y - originQ.y,
-              t: ts
-            }
-
-            yield p
+            yield { x: q.x - originQ.x, y: q.y - originQ.y, t: ts }
           }
         }
       }
@@ -207,18 +207,19 @@ function* trajectoryPoints(trajectory, t0, t1) {
   }
   const q = trajectory.evaluatePosition(t1)
   const originQ = originBodyTrajectory.evaluatePosition(t1)
-  if (isOnScreen({x: q.x - originQ.x, y: q.y - originQ.y}, lastPos)) {
-    const dx = q.x - originQ.x - lastPos.x
-    const dy = q.y - originQ.y - lastPos.y
+  const p = {x: q.x - originQ.x, y: q.y - originQ.y, t: t1}
+  if (clipLine(lastPos, p)) {
+    const dx = p.x - lastPos.x
+    const dy = p.y - lastPos.y
     if (dx * dx + dy * dy >= minSubdivisionDistanceSq) {
       for (let ts = lastT; ts < t1; ts += 100 * 60) {
-        const q2 = trajectory.evaluatePosition(ts)
-        const originQ2 = originBodyTrajectory.evaluatePosition(ts)
-        yield {x: q2.x - originQ2.x, y: q2.y - originQ2.y, t: ts}
+        const q = trajectory.evaluatePosition(ts)
+        const originQ = originBodyTrajectory.evaluatePosition(ts)
+        yield {x: q.x - originQ.x, y: q.y - originQ.y, t: ts}
       }
     }
   }
-  yield {x: q.x - originQ.x, y: q.y - originQ.y, t: t1}
+  yield p
 }
 
 function polyline(generator) {
