@@ -14,6 +14,9 @@ const celestials = [
 
   { name: "Mars", mass: 6.4171e23, position: {x: 2.2794e11, y: 0}, velocity: {x: 0, y: 24.077e3}, radius: 3389.5e3, color: "#f00" },
 
+    { name: "Phobos", mass: 1.0659e16, position: {x: 2.2794e11 + 9.376e6, y: 0}, velocity: {x: 0, y: 24.077e3 + 2.138e3}, radius: 11.2667e3, color: "#f00" },
+    { name: "Deimos", mass: 1.4762e15, position: {x: 2.2794e11 + 2.326e7, y: 0}, velocity: {x: 0, y: 24.077e3 + 1.351e3}, radius: 6.2e3, color: "#f00" },
+
   { name: "Jupiter", mass: 1.8986e27, position: {x: 7.7857e11, y: 0}, velocity: {x: 0, y: 13.07e3}, radius: 69911e3, color: "#f0f" },
 
     { name: "Callisto", mass: 1.075938e23, position: {x: 7.7857e11 + 1.883e9, y: 0}, velocity: {x: 0, y: 13.07e3 + 8204}, radius: 2410e3, color: "#f0f" },
@@ -35,12 +38,14 @@ const celestials = [
 const ephemeris = new Ephemeris({
   bodies: celestials,
   time: 0,
-  step: 10 * 60,
+  step: 1 * 60,
   tolerance: 1e-3,
 })
 window.ephemeris = ephemeris
 
-ephemeris.prolong(365.25 * 24 * 60 * 60)
+//ephemeris.prolong(365.25 * 24 * 60 * 60)
+//ephemeris.prolong(7 * 60 * 60)
+//ephemeris.prolong(6750)
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
@@ -303,6 +308,7 @@ function draw() {
   const drawTime = end - start
   document.querySelector('#draw-time').textContent = drawTime.toFixed(2) + ' ms'
   document.querySelector('#zoom-level').textContent = zoom.toFixed(2) + 'x'
+  document.querySelector('#t').textContent = tMax
 }
 
 let raf = null
@@ -313,6 +319,16 @@ function requestDraw() {
       draw()
     })
   }
+}
+
+step.onclick = () => {
+  ephemeris.prolong(ephemeris.tMax + ephemeris.step)
+  requestDraw()
+}
+
+step10.onclick = () => {
+  ephemeris.prolong(ephemeris.tMax + ephemeris.step * 10)
+  requestDraw()
 }
 
 draw()

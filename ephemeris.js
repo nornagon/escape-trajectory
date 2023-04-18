@@ -228,10 +228,15 @@ export class Ephemeris {
     return this.#trajectories.reduce((tMax, t) => Math.min(tMax, t.tMax), this.#trajectories[0].tMax)
   }
 
+  get step() {
+    return this.#step
+  }
+
   // Prolong the trajectories to at least |t|.
   prolong(t) {
     while (this.tMax < t) {
       const tInitial = this.tMax
+      const updates = []
       this.#bodies.forEach((body, i) => {
         const { position, velocity } = integrate(
           (state) => gravitation(this.#bodies, i, state.position),
@@ -239,9 +244,12 @@ export class Ephemeris {
           tInitial,
           this.#step
         )
-        body.position = position
-        body.velocity = velocity
+        updates.push({position, velocity})
         this.#trajectories[i].append(tInitial + this.#step, position, velocity)
+      })
+      updates.forEach((update, i) => {
+        this.#bodies[i].position = update.position
+        this.#bodies[i].velocity = update.velocity
       })
     }
   }
@@ -259,7 +267,7 @@ function gravitation(bodies, i, position) {
 
     const dx = other.position.x - position.x
     const dy = other.position.y - position.y
-    const r = Math.sqrt(dx * dx + dy * dy)
+    const r = Math.hypot(dx, dy)
     const a = G * other.mass / (r * r)
 
     ax += a * dx / r
@@ -284,7 +292,7 @@ function evaluate(acc, initial, t, dt, d) {
 
   return {
     dp: state.velocity,
-    dv: acc(state, t)
+    dv: acc(state, t + dt)
   }
 }
 function integrate(acc, state, t, dt) {
