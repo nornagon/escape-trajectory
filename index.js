@@ -1,4 +1,4 @@
-import { Ephemeris } from "./ephemeris.js"
+import { Ephemeris, Trajectory } from "./ephemeris.js"
 import { cohenSutherlandLineClip } from "./geometry.js"
 
 const celestials = [
@@ -35,6 +35,23 @@ const celestials = [
   { name: "Ceres", mass: 9.393e20, position: {x: 4.14e11, y: 0}, velocity: {x: 0, y: 17.9e3}, radius: 469.73e3, color: "#f0f" },
 ]
 
+const vadd = (a, b) => ({x: a.x + b.x, y: a.y + b.y})
+const earth = celestials.find(c => c.name === 'Earth')
+const leoRadius = 200e3 + earth.radius
+const G = 6.67408e-11
+const leoVelocity = Math.sqrt(G * earth.mass / leoRadius)
+console.log(leoVelocity)
+
+const vessels = [
+  {
+    name: "Vessel 1",
+    trajectory: new Trajectory(0, 0, {
+      position: vadd(earth.position, { x: leoRadius, y: 0 }), velocity: vadd(earth.velocity, { x: 0, y: leoVelocity })
+    }),
+    color: "#0f0"
+  },
+]
+
 const ephemeris = new Ephemeris({
   bodies: celestials,
   time: 0,
@@ -44,8 +61,12 @@ const ephemeris = new Ephemeris({
 window.ephemeris = ephemeris
 
 //ephemeris.prolong(365.25 * 24 * 60 * 60)
-//ephemeris.prolong(7 * 60 * 60)
-//ephemeris.prolong(6750)
+/*
+ephemeris.prolong(7 * 60 * 60)
+vessels.forEach(v => {
+  ephemeris.flow(v.trajectory, ephemeris.tMax)
+})
+*/
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
@@ -285,6 +306,29 @@ function draw() {
   }
   ctx.restore()
 
+  // Draw vessel trajectories
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
+  ctx.lineWidth = 1
+  for (const vessel of vessels) {
+    ctx.save()
+    ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
+    ctx.scale(zoom/1e9, zoom/1e9)
+    ctx.beginPath()
+    polyline(trajectoryPoints(vessel.trajectory, 0, tMax))
+    ctx.restore()
+    ctx.stroke()
+  }
+
+  // Draw vessel
+  for (const vessel of vessels) {
+    const pos = vessel.trajectory.evaluatePosition(tMax)
+    const screenPos = worldToScreen(pos)
+    ctx.fillStyle = vessel.color
+    ctx.beginPath()
+    ctx.arc(screenPos.x, screenPos.y, 2, 0, 2 * Math.PI)
+    ctx.fill()
+  }
+
   // Draw info
   ctx.fillStyle = 'white'
   //ctx.fillText("Total energy: " + totalEnergy(bodies).toExponential(4), 10, 20)
@@ -307,16 +351,25 @@ function requestDraw() {
 
 step.onclick = () => {
   ephemeris.prolong(ephemeris.tMax + ephemeris.step)
+  vessels.forEach(v => {
+    ephemeris.flow(v.trajectory, ephemeris.tMax)
+  })
   requestDraw()
 }
 
 step10.onclick = () => {
   ephemeris.prolong(ephemeris.tMax + ephemeris.step * 10)
+  vessels.forEach(v => {
+    ephemeris.flow(v.trajectory, ephemeris.tMax)
+  })
   requestDraw()
 }
 
 step100.onclick = () => {
   ephemeris.prolong(ephemeris.tMax + ephemeris.step * 100)
+  vessels.forEach(v => {
+    ephemeris.flow(v.trajectory, ephemeris.tMax)
+  })
   requestDraw()
 }
 draw()

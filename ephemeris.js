@@ -175,8 +175,13 @@ function lowerBound(array, compare) {
   return first
 }
 
-class Trajectory {
+export class Trajectory {
   #points = []
+  constructor(step, tolerance, initial) {
+    if (initial)
+      this.#points.push({time: 0, position: initial.position, velocity: initial.velocity})
+  }
+
   append(time, position, velocity) {
     this.#points.push({time, position, velocity})
   }
@@ -186,6 +191,9 @@ class Trajectory {
   }
 
   evaluatePosition(t) {
+    if (t === this.#points[this.#points.length - 1].time) {
+      return this.#points[this.#points.length - 1].position
+    }
     const i = lowerBound(this.#points, (p) => p.time < t)
     if (i === 0) {
       return this.#points[0].position
@@ -199,6 +207,24 @@ class Trajectory {
     const q1 = p1.position
     return vops.add(q0, vops.scale(vops.sub(q1, q0), (t - t0) / (t1 - t0)))
   }
+
+  evaluateVelocity(t) {
+    if (t === this.#points[this.#points.length - 1].time) {
+      return this.#points[this.#points.length - 1].velocity
+    }
+    const i = lowerBound(this.#points, (p) => p.time < t)
+    if (i === 0) {
+      return this.#points[0].velocity
+    }
+    // interpolate between |i - 1| and |i|
+    const p0 = this.#points[i - 1]
+    const p1 = this.#points[i]
+    const t0 = p0.time
+    const t1 = p1.time
+    const v0 = p0.velocity
+    const v1 = p1.velocity
+    return vops.add(v0, vops.scale(vops.sub(v1, v0), (t - t0) / (t1 - t0)))
+  }
 }
 
 export class Ephemeris {
@@ -210,9 +236,7 @@ export class Ephemeris {
     this.#bodies = initialState.bodies
     this.#step = initialState.step
     this.#trajectories = this.#bodies.map((b) => {
-      const t = new Trajectory(initialState.step, initialState.tolerance)
-      t.append(0, b.position, b.velocity)
-      return t
+      return new Trajectory(initialState.step, initialState.tolerance, b)
     })
   }
 
@@ -251,6 +275,20 @@ export class Ephemeris {
         this.#bodies[i].position = update.position
         this.#bodies[i].velocity = update.velocity
       })
+    }
+  }
+
+  flow(trajectory, t, step = this.#step / 10) {
+    this.prolong(t)
+    while (trajectory.tMax < t) {
+      const tInitial = trajectory.tMax
+      const { position, velocity } = integrate(
+        (state) => gravitation(this.#trajectories.map((traj, i) => ({position: traj.evaluatePosition(tInitial), mass: this.#bodies[i].mass})), -1, state.position),
+        { position: trajectory.evaluatePosition(tInitial), velocity: trajectory.evaluateVelocity(tInitial) },
+        tInitial,
+        step
+      )
+      trajectory.append(tInitial + step, position, velocity)
     }
   }
 }
