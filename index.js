@@ -404,17 +404,18 @@ function drawUI(ctx) {
       vessel.trajectory.evaluateVelocity(trajectoryPoint.t),
       ephemeris.trajectories[originBodyIndex].evaluateVelocity(trajectoryPoint.t),
     )
+    const len = draggingTrajectory ? draggingTrajectoryLen : 80
     const angle = 0
     const prograde = vnormalize(v)
     const normal = vrotate(prograde, angle)
     ctx.beginPath()
     ctx.moveTo(screenPos.x + normal.x * 10, screenPos.y + normal.y * 10)
-    ctx.lineTo(screenPos.x + normal.x * 80, screenPos.y + normal.y * 80)
+    ctx.lineTo(screenPos.x + normal.x * len, screenPos.y + normal.y * len)
     ctx.stroke()
 
     ctx.fillStyle = '#0f0'
     ctx.strokeStyle = 'black'
-    polygon(ctx, vadd(screenPos, vscale(normal, draggingTrajectory ? draggingTrajectoryLen : 80)), 3, 10, -Math.PI / 2)
+    polygon(ctx, vadd(screenPos, vscale(normal, len)), 3, 10, -Math.PI / 2)
     ctx.stroke()
     ctx.fill()
     ctx.on?.('mousedown', () => {
