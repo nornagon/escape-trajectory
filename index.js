@@ -38,11 +38,14 @@ const celestials = [
 const vadd = (a, b) => ({x: a.x + b.x, y: a.y + b.y})
 const vsub = (a, b) => ({x: a.x - b.x, y: a.y - b.y})
 const vscale = (v, s) => ({x: v.x * s, y: v.y * s})
-const vnormalize = v => vscale(v, 1 / Math.hypot(v.x, v.y))
+const vdot = (a, b) => a.x * b.x + a.y * b.y
+const vlen = v => Math.hypot(v.x, v.y)
+const vnormalize = v => vscale(v, 1 / vlen(v))
 const vrotate = (v, a) => ({
   x: v.x * Math.cos(a) - v.y * Math.sin(a),
   y: v.x * Math.sin(a) + v.y * Math.cos(a),
 })
+const vproject = (a, b) => vscale(b, vdot(a, b) / vlen(b))
 const earth = celestials.find(c => c.name === 'Earth')
 const G = 6.67408e-11
 function orbitalVelocity(m1, m2, r) {
@@ -145,8 +148,77 @@ function findNearestTrajectory({x, y}) {
     }
 }
 
+class InteractionContext2D {
+  #paths = []
+  #currentPath = null
+  #ctx
+
+  constructor(ctx) {
+    this.#ctx = ctx
+  }
+
+  beginPath() {
+    this.#currentPath = new Path2D()
+    this.#paths.push(this.#currentPath)
+  }
+
+  moveTo(x, y) {
+    this.#currentPath.moveTo(x, y)
+  }
+
+  lineTo(x, y) {
+    this.#currentPath.lineTo(x, y)
+  }
+
+  rect(x, y, w, h) {
+    this.#currentPath.rect(x, y, w, h)
+  }
+
+  arc(x, y, r, a0, a1) {
+    this.#currentPath.arc(x, y, r, a0, a1)
+  }
+
+  stroke() {
+  }
+
+  fill() {
+  }
+
+  closePath() {
+    this.#currentPath.closePath()
+  }
+
+  set fillStyle(style) {
+  }
+
+  set strokeStyle(style) {
+  }
+
+  set lineWidth(width) {
+  }
+
+  on(event, handler) {
+    this.#currentPath[event] = handler
+  }
+
+  getPathForPoint({x, y}) {
+    // Go backwards through the paths so we hit the topmost one first.
+    for (let i = this.#paths.length - 1; i >= 0; i--) {
+      const path = this.#paths[i]
+      if (this.#ctx.isPointInPath(path, x, y))
+        return path
+    }
+  }
+}
+
 canvas.addEventListener("mousedown", event => {
   event.preventDefault()
+
+  const interactions = new InteractionContext2D(ctx)
+  drawUI(interactions)
+  const path = interactions.getPathForPoint({x: event.offsetX, y: event.offsetY})
+  path?.mousedown?.(event)
+  if (path) return
 
   const x0 = event.offsetX - canvas.width / 2 - pan.x
   const y0 = event.offsetY - canvas.height / 2 - pan.y
@@ -193,8 +265,24 @@ canvas.addEventListener("mousedown", event => {
 })
 
 canvas.addEventListener("mousemove", event => {
+  /*
   const point = findNearestTrajectory(event)
   trajectoryHoverPoint = point
+  */
+  const interactions = new InteractionContext2D(ctx)
+  drawUI(interactions)
+  const path = interactions.getPathForPoint({x: event.offsetX, y: event.offsetY})
+  path?.mousemove?.(event)
+
+  requestDraw()
+})
+
+canvas.addEventListener("mouseup", event => {
+  const interactions = new InteractionContext2D(ctx)
+  drawUI(interactions)
+  const path = interactions.getPathForPoint({x: event.offsetX, y: event.offsetY})
+  path?.mouseup?.(event)
+
   requestDraw()
 })
 
@@ -268,7 +356,7 @@ function* trajectoryPoints(trajectory, t0, t1, step = 100 * 60 * 8) {
   yield trajectoryPosInFrame(trajectory, t1)
 }
 
-function polyline(generator) {
+function polyline(ctx, generator) {
   let first = true
   for (const p of generator) {
     if (first) {
@@ -280,7 +368,7 @@ function polyline(generator) {
   }
 }
 
-function polygon(c, n, r, startAngle = 0) {
+function polygon(ctx, c, n, r, startAngle = 0) {
   ctx.beginPath()
   for (let i = 0; i < n; i++) {
     const angle = i * 2 * Math.PI / n + startAngle
@@ -290,6 +378,75 @@ function polygon(c, n, r, startAngle = 0) {
       ctx.lineTo(c.x + r * Math.cos(angle), c.y + r * Math.sin(angle))
   }
   ctx.closePath()
+}
+
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ */
+let draggingTrajectory = false
+let draggingTrajectoryLen = 0
+function drawUI(ctx) {
+  if (trajectoryPoint) {
+    const vessel = vessels[trajectoryPoint.i]
+    const q = vessel.trajectory.evaluatePosition(trajectoryPoint.t)
+    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryPoint.t)
+    const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
+
+    ctx.strokeStyle = 'lightblue'
+    ctx.fillStyle = 'black'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(screenPos.x, screenPos.y, 10, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+
+    const v = vsub(
+      vessel.trajectory.evaluateVelocity(trajectoryPoint.t),
+      ephemeris.trajectories[originBodyIndex].evaluateVelocity(trajectoryPoint.t),
+    )
+    const angle = 0
+    const prograde = vnormalize(v)
+    const normal = vrotate(prograde, angle)
+    ctx.beginPath()
+    ctx.moveTo(screenPos.x + normal.x * 10, screenPos.y + normal.y * 10)
+    ctx.lineTo(screenPos.x + normal.x * 80, screenPos.y + normal.y * 80)
+    ctx.stroke()
+
+    ctx.fillStyle = '#0f0'
+    ctx.strokeStyle = 'black'
+    polygon(ctx, vadd(screenPos, vscale(normal, draggingTrajectory ? draggingTrajectoryLen : 80)), 3, 10, -Math.PI / 2)
+    ctx.stroke()
+    ctx.fill()
+    ctx.on?.('mousedown', () => {
+      draggingTrajectory = true;
+      draggingTrajectoryLen = 80
+    })
+
+    if (draggingTrajectory && ctx.on) {
+      ctx.beginPath()
+      ctx.rect(0, 0, canvas.width, canvas.height)
+      ctx.on?.('mousemove', (e) => {
+        const { x, y } = e
+        // project the vector from |screenPos| to |e| onto the normal vector using |vproj|
+        const v = vproject(vsub({ x, y }, screenPos), normal)
+        const len = vlen(v)
+        draggingTrajectoryLen = Math.max(0, len)
+      })
+      ctx.on?.('mouseup', () => {
+        draggingTrajectory = false
+      })
+    }
+  } else if (trajectoryHoverPoint) {
+    const vessel = vessels[trajectoryHoverPoint.i]
+    const q = vessel.trajectory.evaluatePosition(trajectoryHoverPoint.t)
+    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryHoverPoint.t)
+    const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
+
+    ctx.fillStyle = 'lightblue'
+    ctx.beginPath()
+    ctx.arc(screenPos.x, screenPos.y, 5, 0, 2 * Math.PI)
+    ctx.fill()
+  }
 }
 
 function draw() {
@@ -307,7 +464,7 @@ function draw() {
     ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
     ctx.scale(zoom/1e9, zoom/1e9)
     ctx.beginPath()
-    polyline(trajectoryPoints(trajectory, 0, tMax))
+    polyline(ctx, trajectoryPoints(trajectory, 0, tMax))
     ctx.restore()
     ctx.stroke()
   }
@@ -339,54 +496,10 @@ function draw() {
     ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
     ctx.scale(zoom/1e9, zoom/1e9)
     ctx.beginPath()
-    polyline(trajectoryPoints(vessel.trajectory, 0, tMax))
+    polyline(ctx, trajectoryPoints(vessel.trajectory, 0, tMax))
     ctx.restore()
     ctx.stroke()
   }
-
-  if (trajectoryPoint) {
-    const vessel = vessels[trajectoryPoint.i]
-    const q = vessel.trajectory.evaluatePosition(trajectoryPoint.t)
-    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryPoint.t)
-    const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
-
-    ctx.strokeStyle = 'lightblue'
-    ctx.fillStyle = 'black'
-    ctx.lineWidth = 3
-    ctx.beginPath()
-    ctx.arc(screenPos.x, screenPos.y, 10, 0, 2 * Math.PI)
-    ctx.fill()
-    ctx.stroke()
-
-    const v = vsub(
-      vessel.trajectory.evaluateVelocity(trajectoryPoint.t),
-      ephemeris.trajectories[originBodyIndex].evaluateVelocity(trajectoryPoint.t),
-    )
-    const angle = 0
-    const prograde = vnormalize(v)
-    const normal = vrotate(prograde, angle)
-    ctx.beginPath()
-    ctx.moveTo(screenPos.x + normal.x * 10, screenPos.y + normal.y * 10)
-    ctx.lineTo(screenPos.x + normal.x * 80, screenPos.y + normal.y * 80)
-    ctx.stroke()
-
-    ctx.fillStyle = '#0f0'
-    ctx.strokeStyle = 'black'
-    polygon(vadd(screenPos, vscale(normal, 80)), 3, 10, -Math.PI / 2)
-    ctx.stroke()
-    ctx.fill()
-  } else if (trajectoryHoverPoint) {
-    const vessel = vessels[trajectoryHoverPoint.i]
-    const q = vessel.trajectory.evaluatePosition(trajectoryHoverPoint.t)
-    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryHoverPoint.t)
-    const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
-
-    ctx.fillStyle = 'lightblue'
-    ctx.beginPath()
-    ctx.arc(screenPos.x, screenPos.y, 5, 0, 2 * Math.PI)
-    ctx.fill()
-  }
-
 
   // Draw vessel
   for (const vessel of vessels) {
@@ -398,6 +511,12 @@ function draw() {
     ctx.fill()
   }
 
+  ctx.restore()
+  ctx.save()
+  drawUI(ctx)
+  ctx.restore()
+
+  ctx.save()
   // Draw info
   ctx.fillStyle = 'white'
   //ctx.fillText("Total energy: " + totalEnergy(bodies).toExponential(4), 10, 20)
@@ -406,6 +525,7 @@ function draw() {
   document.querySelector('#draw-time').textContent = drawTime.toFixed(2) + ' ms'
   document.querySelector('#zoom-level').textContent = zoom.toFixed(2) + 'x'
   document.querySelector('#t').textContent = tMax
+  ctx.restore()
 }
 
 let raf = null
