@@ -36,20 +36,37 @@ const celestials = [
 ]
 
 const vadd = (a, b) => ({x: a.x + b.x, y: a.y + b.y})
+const vsub = (a, b) => ({x: a.x - b.x, y: a.y - b.y})
+const vscale = (v, s) => ({x: v.x * s, y: v.y * s})
+const vnormalize = v => vscale(v, 1 / Math.hypot(v.x, v.y))
+const vrotate = (v, a) => ({
+  x: v.x * Math.cos(a) - v.y * Math.sin(a),
+  y: v.x * Math.sin(a) + v.y * Math.cos(a),
+})
 const earth = celestials.find(c => c.name === 'Earth')
-const leoRadius = 200e3 + earth.radius
 const G = 6.67408e-11
-const leoVelocity = Math.sqrt(G * earth.mass / leoRadius)
-console.log(leoVelocity)
+function orbitalVelocity(m1, m2, r) {
+  return Math.sqrt(G * (m1 + m2) / r)
+}
+function initialState(parentBody, r, t = 0) {
+  const v = orbitalVelocity(parentBody.mass, 0, r)
+  return {
+    position: vadd(parentBody.position, { x: r * Math.cos(t), y: r * Math.sin(t) }),
+    velocity: vadd(parentBody.velocity, { x: 0, y: v }),
+  }
+}
 
 const vessels = [
   {
     name: "Vessel 1",
-    trajectory: new Trajectory(0, 0, {
-      position: vadd(earth.position, { x: leoRadius, y: 0 }), velocity: vadd(earth.velocity, { x: 0, y: leoVelocity })
-    }),
+    trajectory: new Trajectory(0, 0, initialState(earth, 200e3 + earth.radius)),
     color: "#0f0"
   },
+  {
+    name: "Vessel 2",
+    trajectory: new Trajectory(0, 0, initialState(earth, 400e3 + earth.radius)),
+    color: "#0f0"
+  }
 ]
 
 const ephemeris = new Ephemeris({
@@ -61,24 +78,25 @@ const ephemeris = new Ephemeris({
 window.ephemeris = ephemeris
 
 //ephemeris.prolong(365.25 * 24 * 60 * 60)
-/*
-ephemeris.prolong(7 * 60 * 60)
+ephemeris.prolong(1 * 60 * 60)
 vessels.forEach(v => {
   ephemeris.flow(v.trajectory, ephemeris.tMax)
 })
-*/
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
+canvas.width = window.innerWidth
+canvas.height = window.innerHeight - 200
 canvas.style.background = 'black'
 
 const ctx = canvas.getContext("2d")
 
 let pan = {x: 0, y: 0}
-let zoom = 1
+let zoom = 38e3
 
-let originBodyIndex = 0
+let originBodyIndex = 3
 
+let trajectoryHoverPoint = null
 let trajectoryPoint = null
 
 function defaultWheelDelta(event) {
@@ -103,16 +121,16 @@ canvas.addEventListener("wheel", event => {
   requestDraw()
 })
 
-function findNearestTrajectory(event) {
+function findNearestTrajectory({x, y}) {
   const tMax = ephemeris.tMax
   let closestP = 0
   let closestD = Infinity
   let closestI = -1
-  ephemeris.trajectories.forEach((trajectory, i) => {
+  vessels.forEach((vessel, i) => {
     // Find the closest point on |trajectory|
-    for (const point of trajectoryPoints(trajectory, 0, tMax)) {
+    for (const point of trajectoryPoints(vessel.trajectory, 0, tMax)) {
       const p = worldToScreenWithoutOrigin(point)
-      const d = Math.hypot(p.x - event.offsetX, p.y - event.offsetY)
+      const d = Math.hypot(p.x - x, p.y - y)
       if (d < closestD) {
         closestD = d
         closestP = point
@@ -120,14 +138,11 @@ function findNearestTrajectory(event) {
       }
     }
   })
-  if (closestD < 10) {
-    trajectoryPoint = {
+  if (closestD < 10)
+    return {
       i: closestI,
       t: closestP.t,
     }
-    requestDraw()
-    return true
-  }
 }
 
 canvas.addEventListener("mousedown", event => {
@@ -166,13 +181,21 @@ canvas.addEventListener("mousedown", event => {
     window.removeEventListener("mouseup", mouseup)
     window.removeEventListener("blur", mouseup)
     if (!dragged) {
-      findNearestTrajectory(event)
+      const point = findNearestTrajectory(event)
+      trajectoryPoint = point
+      requestDraw()
     }
   }
 
   canvas.addEventListener("mousemove", mousemove)
   window.addEventListener("mouseup", mouseup)
   window.addEventListener("blur", mouseup)
+})
+
+canvas.addEventListener("mousemove", event => {
+  const point = findNearestTrajectory(event)
+  trajectoryHoverPoint = point
+  requestDraw()
 })
 
 
@@ -257,6 +280,18 @@ function polyline(generator) {
   }
 }
 
+function polygon(c, n, r, startAngle = 0) {
+  ctx.beginPath()
+  for (let i = 0; i < n; i++) {
+    const angle = i * 2 * Math.PI / n + startAngle
+    if (i === 0)
+      ctx.moveTo(c.x + r * Math.cos(angle), c.y + r * Math.sin(angle))
+    else
+      ctx.lineTo(c.x + r * Math.cos(angle), c.y + r * Math.sin(angle))
+  }
+  ctx.closePath()
+}
+
 function draw() {
   const start = performance.now()
   ctx.save()
@@ -275,16 +310,6 @@ function draw() {
     polyline(trajectoryPoints(trajectory, 0, tMax))
     ctx.restore()
     ctx.stroke()
-  }
-
-  if (trajectoryPoint) {
-    const q = ephemeris.trajectories[trajectoryPoint.i].evaluatePosition(trajectoryPoint.t)
-    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryPoint.t)
-    const screenPos = worldToScreenWithoutOrigin({x: q.x - originQ.x, y: q.y - originQ.y})
-    ctx.fillStyle = 'white'
-    ctx.beginPath()
-    ctx.arc(screenPos.x, screenPos.y, 4, 0, 2 * Math.PI)
-    ctx.fill()
   }
 
   // Draw bodies
@@ -318,6 +343,50 @@ function draw() {
     ctx.restore()
     ctx.stroke()
   }
+
+  if (trajectoryPoint) {
+    const vessel = vessels[trajectoryPoint.i]
+    const q = vessel.trajectory.evaluatePosition(trajectoryPoint.t)
+    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryPoint.t)
+    const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
+
+    ctx.strokeStyle = 'lightblue'
+    ctx.fillStyle = 'black'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(screenPos.x, screenPos.y, 10, 0, 2 * Math.PI)
+    ctx.fill()
+    ctx.stroke()
+
+    const v = vsub(
+      vessel.trajectory.evaluateVelocity(trajectoryPoint.t),
+      ephemeris.trajectories[originBodyIndex].evaluateVelocity(trajectoryPoint.t),
+    )
+    const angle = 0
+    const prograde = vnormalize(v)
+    const normal = vrotate(prograde, angle)
+    ctx.beginPath()
+    ctx.moveTo(screenPos.x + normal.x * 10, screenPos.y + normal.y * 10)
+    ctx.lineTo(screenPos.x + normal.x * 80, screenPos.y + normal.y * 80)
+    ctx.stroke()
+
+    ctx.fillStyle = '#0f0'
+    ctx.strokeStyle = 'black'
+    polygon(vadd(screenPos, vscale(normal, 80)), 3, 10, -Math.PI / 2)
+    ctx.stroke()
+    ctx.fill()
+  } else if (trajectoryHoverPoint) {
+    const vessel = vessels[trajectoryHoverPoint.i]
+    const q = vessel.trajectory.evaluatePosition(trajectoryHoverPoint.t)
+    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryHoverPoint.t)
+    const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
+
+    ctx.fillStyle = 'lightblue'
+    ctx.beginPath()
+    ctx.arc(screenPos.x, screenPos.y, 5, 0, 2 * Math.PI)
+    ctx.fill()
+  }
+
 
   // Draw vessel
   for (const vessel of vessels) {
