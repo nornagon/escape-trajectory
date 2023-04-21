@@ -356,11 +356,11 @@ canvas.addEventListener("mousedown", event => {
         currentManeuver = vessel.addManeuver(point.t, 0, vsub(vessel.trajectory.evaluateVelocity(point.t), originBodyTrajectory.evaluateVelocity(point.t)))
         maneuverVessel = vessel
       } else {
-        if (currentManeuver.duration === 0) {
+        if (currentManeuver?.duration === 0) {
           maneuverVessel.removeManeuver(currentManeuver)
+          currentManeuver = null
+          maneuverVessel = null
         }
-        currentManeuver = null
-        maneuverVessel = null
       }
       requestDraw()
     }
@@ -687,30 +687,54 @@ function requestDraw() {
   }
 }
 
-step.onclick = () => {
-  ephemeris.prolong(ephemeris.tMax + ephemeris.step)
+const Second = 1
+const Minute = 60 * Second
+const Hour = 60 * Minute
+
+function simUntil(t) {
+  ephemeris.prolong(t + 1 * Hour)
   vessels.forEach(v => {
     ephemeris.flow(v.trajectory, ephemeris.tMax)
   })
-  currentTime += ephemeris.step
+  currentTime = t
   requestDraw()
+}
+
+step.onclick = () => {
+  simUntil(currentTime + ephemeris.step)
 }
 
 step10.onclick = () => {
-  ephemeris.prolong(ephemeris.tMax + ephemeris.step * 10)
-  vessels.forEach(v => {
-    ephemeris.flow(v.trajectory, ephemeris.tMax)
-  })
-  currentTime += ephemeris.step * 10
-  requestDraw()
+  simUntil(currentTime + ephemeris.step * 10)
 }
 
 step100.onclick = () => {
-  ephemeris.prolong(ephemeris.tMax + ephemeris.step * 100)
-  vessels.forEach(v => {
-    ephemeris.flow(v.trajectory, ephemeris.tMax)
-  })
-  currentTime += ephemeris.step * 100
-  requestDraw()
+  simUntil(currentTime + ephemeris.step * 100)
 }
+
+let timeLoop = null
+let last = null
+function loop(t) {
+  timeLoop = requestAnimationFrame(loop)
+  if (!last) {
+    last = t
+  } else {
+    const dt = t - last
+    last = t
+    simUntil(currentTime + dt / 1000)
+  }
+}
+
+document.querySelector("#start").onclick = () => {
+  if (!timeLoop) loop()
+}
+
+document.querySelector("#stop").onclick = () => {
+  if (timeLoop) {
+    cancelAnimationFrame(timeLoop)
+    timeLoop = null
+    last = null
+  }
+}
+
 draw()
