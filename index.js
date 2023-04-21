@@ -81,6 +81,8 @@ const ephemeris = new Ephemeris({
 })
 window.ephemeris = ephemeris
 
+let currentTime = 0
+
 /// UI STATE
 
 let pan = {x: 0, y: 0}
@@ -230,14 +232,16 @@ canvas.addEventListener("mousedown", event => {
   const x0 = event.offsetX - canvas.width / 2 - pan.x
   const y0 = event.offsetY - canvas.height / 2 - pan.y
 
-  for (const body of ephemeris.bodies) {
-    const screenPos = worldToScreen(body.position)
+  for (let i = 0; i < ephemeris.bodies.length; i++) {
+    const trajectory = ephemeris.trajectories[i]
+    const currentPosition = trajectory.evaluatePosition(currentTime)
+    const screenPos = worldToScreen(currentPosition)
 
     const dx = screenPos.x - event.offsetX
     const dy = screenPos.y - event.offsetY
     const r = Math.sqrt(dx * dx + dy * dy)
-    if (r < 10) {
-      originBodyIndex = ephemeris.bodies.indexOf(body)
+    if (r < Math.max(10, zoom / 1e9 * ephemeris.bodies[i].radius)) {
+      originBodyIndex = i
       pan.x = 0
       pan.y = 0
 
@@ -295,10 +299,11 @@ canvas.addEventListener("mouseup", event => {
 
 
 function worldToScreen(pos) {
-  const originBody = ephemeris.bodies[originBodyIndex]
+  const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const originBodyPosition = originBodyTrajectory.evaluatePosition(currentTime)
   return {
-    x: (pos.x - originBody.position.x) / 1e9 * zoom + canvas.width / 2 + pan.x,
-    y: (pos.y - originBody.position.y) / 1e9 * zoom + canvas.height / 2 + pan.y,
+    x: (pos.x - originBodyPosition.x) / 1e9 * zoom + canvas.width / 2 + pan.x,
+    y: (pos.y - originBodyPosition.y) / 1e9 * zoom + canvas.height / 2 + pan.y,
   }
 }
 // This version doesn't subtract the origin body's position, so it can be used
@@ -452,24 +457,39 @@ function drawUI(ctx) {
   }
 }
 
+function drawTrajectory(ctx, trajectory, t0 = 0) {
+  // Past
+  ctx.save()
+  ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
+  ctx.scale(zoom/1e9, zoom/1e9)
+  ctx.beginPath()
+  polyline(ctx, trajectoryPoints(trajectory, t0, currentTime))
+  ctx.restore()
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
+  ctx.stroke()
+
+  // Future
+  ctx.save()
+  ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
+  ctx.scale(zoom/1e9, zoom/1e9)
+  ctx.beginPath()
+  polyline(ctx, trajectoryPoints(trajectory, currentTime, trajectory.tMax))
+  ctx.restore()
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+  ctx.stroke()
+}
+
 function draw() {
   const start = performance.now()
   ctx.save()
   ctx.clearRect(0, 0, canvas.width, canvas.height)
 
   // Draw trajectories
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
   ctx.lineWidth = 1
 
   const tMax = ephemeris.tMax
   for (const trajectory of ephemeris.trajectories) {
-    ctx.save()
-    ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
-    ctx.scale(zoom/1e9, zoom/1e9)
-    ctx.beginPath()
-    polyline(ctx, trajectoryPoints(trajectory, 0, tMax))
-    ctx.restore()
-    ctx.stroke()
+    drawTrajectory(ctx, trajectory)
   }
 
   // Draw bodies
@@ -477,7 +497,7 @@ function draw() {
     const body = ephemeris.bodies[i]
     const trajectory = ephemeris.trajectories[i]
     ctx.fillStyle = body.color
-    const pos = trajectory.evaluatePosition(tMax)
+    const pos = trajectory.evaluatePosition(currentTime)
     const screenPos = worldToScreen(pos)
     ctx.beginPath()
     ctx.arc(screenPos.x, screenPos.y, Math.max(2, body.radius / 1e9 * zoom), 0, 2 * Math.PI)
@@ -495,18 +515,12 @@ function draw() {
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
   ctx.lineWidth = 1
   for (const vessel of vessels) {
-    ctx.save()
-    ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
-    ctx.scale(zoom/1e9, zoom/1e9)
-    ctx.beginPath()
-    polyline(ctx, trajectoryPoints(vessel.trajectory, 0, tMax))
-    ctx.restore()
-    ctx.stroke()
+    drawTrajectory(ctx, vessel.trajectory)
   }
 
   // Draw vessel
   for (const vessel of vessels) {
-    const pos = vessel.trajectory.evaluatePosition(tMax)
+    const pos = vessel.trajectory.evaluatePosition(currentTime)
     const screenPos = worldToScreen(pos)
     ctx.fillStyle = vessel.color
     ctx.beginPath()
@@ -546,6 +560,7 @@ step.onclick = () => {
   vessels.forEach(v => {
     ephemeris.flow(v.trajectory, ephemeris.tMax)
   })
+  currentTime += ephemeris.step
   requestDraw()
 }
 
@@ -554,6 +569,7 @@ step10.onclick = () => {
   vessels.forEach(v => {
     ephemeris.flow(v.trajectory, ephemeris.tMax)
   })
+  currentTime += ephemeris.step * 10
   requestDraw()
 }
 
@@ -562,6 +578,7 @@ step100.onclick = () => {
   vessels.forEach(v => {
     ephemeris.flow(v.trajectory, ephemeris.tMax)
   })
+  currentTime += ephemeris.step * 100
   requestDraw()
 }
 draw()
