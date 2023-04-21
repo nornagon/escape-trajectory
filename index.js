@@ -59,19 +59,92 @@ function initialState(parentBody, r, t = 0) {
   }
 }
 
+class Maneuver {
+  #startTime
+  #endTime
+  #initialMass
+  #direction
+
+  constructor({ startTime, endTime, direction, initialMass }) {
+    this.#startTime = startTime
+    this.#endTime = endTime
+    this.#direction = direction
+    this.#initialMass = initialMass
+  }
+
+  get startTime() { return this.#startTime }
+  get endTime() { return this.#endTime }
+
+  inertialIntrinsicAcceleration(t) {
+    return this.#computeIntrinsicAcceleration(t, this.#direction)
+  }
+
+  #computeIntrinsicAcceleration(t, direction) {
+    if (t >= this.#startTime && t <= this.#endTime) {
+      const thrust = 1000000 // Newtons
+      // TODO: assume zero mass flow rate for now
+      return vscale(direction, thrust / this.#initialMass)
+    }
+    return { x: 0, y: 0 }
+  }
+}
+
+class Vessel {
+  #name
+  #mass
+  #trajectory
+  #color
+  #maneuvers = []
+  constructor({ name, mass, initialState, color }) {
+    this.#name = name
+    this.#mass = mass
+    this.#trajectory = new Trajectory(initialState)
+    this.#color = color
+  }
+
+  get name() { return this.#name }
+  get mass() { return this.#mass }
+  get trajectory() { return this.#trajectory }
+  get color() { return this.#color }
+
+  intrinsicAcceleration(t) {
+    const a = { x: 0, y: 0 }
+    for (const maneuver of this.#maneuvers) {
+      const ma = maneuver.inertialIntrinsicAcceleration(t)
+      a.x += ma.x
+      a.y += ma.y
+    }
+    return a
+  }
+
+  addManeuver(t0, duration, direction) {
+    this.#maneuvers.push(new Maneuver({
+      startTime: t0,
+      endTime: t0 + duration,
+      direction,
+      initialMass: this.#mass,
+    }))
+    return this.#maneuvers[this.#maneuvers.length - 1]
+  }
+}
+
 /// WORLD STATE
 const vessels = [
-  {
-    name: "Vessel 1",
-    trajectory: new Trajectory(0, 0, initialState(earth, 200e3 + earth.radius)),
-    color: "#0f0"
-  },
-  {
-    name: "Vessel 2",
-    trajectory: new Trajectory(0, 0, initialState(earth, 400e3 + earth.radius)),
-    color: "#0f0"
-  }
+  new Vessel({
+    name: "Lil Rocket Guy",
+    mass: 50e3,
+    initialState: initialState(earth, 200e3 + earth.radius),
+    color: "#0f0",
+  }),
+  new Vessel({
+    name: "ISS",
+    mass: 420e3,
+    initialState: initialState(earth, 400e3 + earth.radius),
+    color: "#0f0",
+  })
 ]
+
+vessels[0].addManeuver(600, 60, vnormalize({x: 1, y: 1}))
 
 const ephemeris = new Ephemeris({
   bodies: celestials,
@@ -100,7 +173,7 @@ let draggingTrajectoryLen = 0
 //ephemeris.prolong(365.25 * 24 * 60 * 60)
 ephemeris.prolong(1 * 60 * 60)
 vessels.forEach(v => {
-  ephemeris.flow(v.trajectory, ephemeris.tMax)
+  ephemeris.flow(v.trajectory, ephemeris.tMax, v.intrinsicAcceleration.bind(v))
 })
 
 /** @type {HTMLCanvasElement} */

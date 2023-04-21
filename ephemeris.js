@@ -13,7 +13,7 @@ const vops = {
   norm(a) {
     return Math.sqrt(a.x * a.x + a.y * a.y)
   },
-  zero: { x: 0, y: 0 },
+  zero: Object.freeze({ x: 0, y: 0 }),
 }
 
 const G = 6.67408e-11
@@ -177,7 +177,7 @@ function lowerBound(array, compare) {
 
 export class Trajectory {
   #points = []
-  constructor(step, tolerance, initial) {
+  constructor(initial) {
     if (initial)
       this.#points.push({time: 0, position: initial.position, velocity: initial.velocity})
   }
@@ -188,6 +188,11 @@ export class Trajectory {
 
   get tMax() {
     return this.#points.length ? this.#points[this.#points.length - 1].time : 0
+  }
+
+  forgetAfter(t) {
+    const i = lowerBound(this.#points, (p) => p.time < t)
+    this.#points.splice(i + 1)
   }
 
   evaluatePosition(t) {
@@ -236,7 +241,7 @@ export class Ephemeris {
     this.#bodies = initialState.bodies
     this.#step = initialState.step
     this.#trajectories = this.#bodies.map((b) => {
-      return new Trajectory(initialState.step, initialState.tolerance, b)
+      return new Trajectory(b)
     })
   }
 
@@ -278,12 +283,12 @@ export class Ephemeris {
     }
   }
 
-  flow(trajectory, t, step = this.#step / 10) {
+  flow(trajectory, t, intrinsicAcceleration = () => vops.zero, step = this.#step / 10) {
     this.prolong(t)
     while (trajectory.tMax < t) {
       const tInitial = trajectory.tMax
       const { position, velocity } = integrate(
-        (state) => gravitation(this.#trajectories.map((traj, i) => ({position: traj.evaluatePosition(tInitial), mass: this.#bodies[i].mass})), -1, state.position),
+        (state, t) => vops.add(intrinsicAcceleration(t), gravitation(this.#trajectories.map((traj, i) => ({position: traj.evaluatePosition(tInitial), mass: this.#bodies[i].mass})), -1, state.position)),
         { position: trajectory.evaluatePosition(tInitial), velocity: trajectory.evaluateVelocity(tInitial) },
         tInitial,
         step
