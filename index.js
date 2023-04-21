@@ -61,26 +61,28 @@ function initialState(parentBody, r, t = 0) {
 
 class Maneuver {
   #startTime
-  #endTime
+  #duration
   #initialMass
   #direction
 
-  constructor({ startTime, endTime, direction, initialMass }) {
+  constructor({ startTime, duration, direction, initialMass }) {
     this.#startTime = startTime
-    this.#endTime = endTime
-    this.#direction = direction
+    this.#duration = duration
+    this.#direction = vnormalize(direction)
     this.#initialMass = initialMass
   }
 
   get startTime() { return this.#startTime }
-  get endTime() { return this.#endTime }
+  get duration() { return this.#duration }
+  set duration(d) { this.#duration = d }
+  get endTime() { return this.#startTime + this.#duration }
 
   inertialIntrinsicAcceleration(t) {
     return this.#computeIntrinsicAcceleration(t, this.#direction)
   }
 
   #computeIntrinsicAcceleration(t, direction) {
-    if (t >= this.#startTime && t <= this.#endTime) {
+    if (t >= this.#startTime && t <= this.#startTime + this.#duration) {
       const thrust = 1000000 // Newtons
       // TODO: assume zero mass flow rate for now
       return vscale(direction, thrust / this.#initialMass)
@@ -120,7 +122,7 @@ class Vessel {
   addManeuver(t0, duration, direction) {
     this.#maneuvers.push(new Maneuver({
       startTime: t0,
-      endTime: t0 + duration,
+      duration,
       direction,
       initialMass: this.#mass,
     }))
@@ -144,8 +146,6 @@ const vessels = [
   })
 ]
 
-vessels[0].addManeuver(600, 60, vnormalize({x: 1, y: 1}))
-
 const ephemeris = new Ephemeris({
   bodies: celestials,
   time: 0,
@@ -164,7 +164,8 @@ let zoom = 38e3
 let originBodyIndex = 3
 
 let trajectoryHoverPoint = null
-let trajectoryPoint = null
+let maneuver = null
+let maneuverVessel = null
 
 let draggingTrajectory = false
 let draggingTrajectoryLen = 0
@@ -338,7 +339,10 @@ canvas.addEventListener("mousedown", event => {
     window.removeEventListener("blur", mouseup)
     if (!dragged) {
       const point = findNearestTrajectory(event)
-      trajectoryPoint = point
+      const vessel = vessels[point.i]
+      const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+      maneuver = vessel.addManeuver(point.t, 0, vsub(vessel.trajectory.evaluateVelocity(point.t), originBodyTrajectory.evaluateVelocity(point.t)))
+      maneuverVessel = vessel
       requestDraw()
     }
   }
@@ -465,14 +469,32 @@ function polygon(ctx, c, n, r, startAngle = 0) {
   ctx.closePath()
 }
 
+function adjustManeuver() {
+  if (!draggingTrajectory)
+    return
+
+  // If the draggingTrajectoryLen is less than 80, make the duration shorter.
+  // If it's more than 80, make the duration longer.
+  if (draggingTrajectoryLen < 80) {
+    maneuver.duration = Math.max(0, maneuver.duration - 1)
+  } else if (draggingTrajectoryLen > 80) {
+    maneuver.duration = Math.min(1000, maneuver.duration + 1)
+  }
+  console.log(maneuver.duration)
+  maneuverVessel.trajectory.forgetAfter(maneuver.startTime)
+  ephemeris.flow(maneuverVessel.trajectory, ephemeris.tMax, maneuverVessel.intrinsicAcceleration.bind(maneuverVessel))
+  requestDraw()
+  requestAnimationFrame(adjustManeuver)
+}
+
 /**
  * @param {CanvasRenderingContext2D} ctx
  */
 function drawUI(ctx) {
-  if (trajectoryPoint) {
-    const vessel = vessels[trajectoryPoint.i]
-    const q = vessel.trajectory.evaluatePosition(trajectoryPoint.t)
-    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryPoint.t)
+  if (maneuver) {
+    const vessel = maneuverVessel
+    const q = vessel.trajectory.evaluatePosition(maneuver.startTime)
+    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(maneuver.startTime)
     const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
 
     ctx.strokeStyle = 'lightblue'
@@ -484,8 +506,8 @@ function drawUI(ctx) {
     ctx.stroke()
 
     const v = vsub(
-      vessel.trajectory.evaluateVelocity(trajectoryPoint.t),
-      ephemeris.trajectories[originBodyIndex].evaluateVelocity(trajectoryPoint.t),
+      vessel.trajectory.evaluateVelocity(maneuver.startTime),
+      ephemeris.trajectories[originBodyIndex].evaluateVelocity(maneuver.startTime),
     )
     const len = draggingTrajectory ? draggingTrajectoryLen : 80
     const angle = 0
@@ -504,6 +526,7 @@ function drawUI(ctx) {
     ctx.on?.('mousedown', () => {
       draggingTrajectory = true;
       draggingTrajectoryLen = 80
+      adjustManeuver()
     })
 
     if (draggingTrajectory && ctx.on) {
