@@ -59,6 +59,7 @@ function initialState(parentBody, r, t = 0) {
   }
 }
 
+/// WORLD STATE
 const vessels = [
   {
     name: "Vessel 1",
@@ -80,6 +81,20 @@ const ephemeris = new Ephemeris({
 })
 window.ephemeris = ephemeris
 
+/// UI STATE
+
+let pan = {x: 0, y: 0}
+let zoom = 38e3
+
+let originBodyIndex = 3
+
+let trajectoryHoverPoint = null
+let trajectoryPoint = null
+
+let draggingTrajectory = false
+let draggingTrajectoryLen = 0
+
+/// SETUP
 //ephemeris.prolong(365.25 * 24 * 60 * 60)
 ephemeris.prolong(1 * 60 * 60)
 vessels.forEach(v => {
@@ -93,14 +108,6 @@ canvas.height = window.innerHeight - 200
 canvas.style.background = 'black'
 
 const ctx = canvas.getContext("2d")
-
-let pan = {x: 0, y: 0}
-let zoom = 38e3
-
-let originBodyIndex = 3
-
-let trajectoryHoverPoint = null
-let trajectoryPoint = null
 
 function defaultWheelDelta(event) {
   return -event.deltaY * (event.deltaMode === 1 ? 0.05 : event.deltaMode ? 1 : 0.002) * (event.ctrlKey ? 10 : 1);
@@ -383,8 +390,6 @@ function polygon(ctx, c, n, r, startAngle = 0) {
 /**
  * @param {CanvasRenderingContext2D} ctx
  */
-let draggingTrajectory = false
-let draggingTrajectoryLen = 0
 function drawUI(ctx) {
   if (trajectoryPoint) {
     const vessel = vessels[trajectoryPoint.i]
@@ -427,11 +432,8 @@ function drawUI(ctx) {
       ctx.beginPath()
       ctx.rect(0, 0, canvas.width, canvas.height)
       ctx.on?.('mousemove', (e) => {
-        const { x, y } = e
-        // project the vector from |screenPos| to |e| onto the normal vector using |vproj|
-        const v = vproject(vsub({ x, y }, screenPos), normal)
-        const len = vlen(v)
-        draggingTrajectoryLen = Math.max(0, len)
+        const a = vdot(vsub(e, screenPos), normal)
+        draggingTrajectoryLen = Math.min(160, Math.max(10, a))
       })
       ctx.on?.('mouseup', () => {
         draggingTrajectory = false
