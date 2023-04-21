@@ -75,6 +75,7 @@ class Maneuver {
   get startTime() { return this.#startTime }
   get duration() { return this.#duration }
   set duration(d) { this.#duration = d }
+  get direction() { return this.#direction }
   get endTime() { return this.#startTime + this.#duration }
 
   inertialIntrinsicAcceleration(t) {
@@ -215,12 +216,14 @@ function findNearestTrajectory({x, y}) {
   vessels.forEach((vessel, i) => {
     // Find the closest point on |trajectory|
     for (const point of trajectoryPoints(vessel.trajectory, 0, tMax)) {
-      const p = worldToScreenWithoutOrigin(point)
-      const d = Math.hypot(p.x - x, p.y - y)
-      if (d < closestD) {
-        closestD = d
-        closestP = point
-        closestI = i
+      if (point.t >= currentTime) {
+        const p = worldToScreenWithoutOrigin(point)
+        const d = Math.hypot(p.x - x, p.y - y)
+        if (d < closestD) {
+          closestD = d
+          closestP = point
+          closestI = i
+        }
       }
     }
   })
@@ -505,14 +508,8 @@ function drawUI(ctx) {
     ctx.fill()
     ctx.stroke()
 
-    const v = vsub(
-      vessel.trajectory.evaluateVelocity(maneuver.startTime),
-      ephemeris.trajectories[originBodyIndex].evaluateVelocity(maneuver.startTime),
-    )
+    const normal = maneuver.direction
     const len = draggingTrajectory ? draggingTrajectoryLen : 80
-    const angle = 0
-    const prograde = vnormalize(v)
-    const normal = vrotate(prograde, angle)
     ctx.beginPath()
     ctx.moveTo(screenPos.x + normal.x * 10, screenPos.y + normal.y * 10)
     ctx.lineTo(screenPos.x + normal.x * len, screenPos.y + normal.y * len)
