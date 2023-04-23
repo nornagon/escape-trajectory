@@ -64,7 +64,15 @@ var techs = [
     description: "We can direct gasses through a nozzle to produce thrust.",
     prerequisites: ["SpaceTech"],
     components: [{"Cold gas thruster":5},{"Hot gas thruster":2}],
-    research: 100
+    research: 25
+  },
+  {
+    name: "CHEMICAL PROPULSION", 
+    description: "Checmical reactions can produce large volumes of hot gas to direct through a nozzle, or for other purposes.",
+    prerequisites: ["NOZZLES"],
+    components: [{"Explosive Separation Bolts":1}],
+    research: 45
+
   },
   { 
     name: "SOLID ROCKETS",
@@ -84,7 +92,7 @@ var techs = [
     name: "MONOPROP THRUSTERS",
     description: "Some chemical compounds contain a lot of energy and just need to be catalyzed to release it.",
     prerequisites: ["CHEMICAL PROPULSION"],
-    components: [{"Hydrazine":3},{"Hot gas rocket":5},{"":3}],
+    components: [{"Hydrazine":3},{"Hot gas rocket":5},{"Peroxide":3}],
     research: 85
   }
 ]
