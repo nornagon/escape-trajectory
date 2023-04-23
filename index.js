@@ -183,7 +183,7 @@ let draggingTrajectoryLen = 0
 //ephemeris.prolong(365.25 * 24 * 60 * 60)
 ephemeris.prolong(1 * 60 * 60)
 vessels.forEach(v => {
-  ephemeris.flow(v.trajectory, ephemeris.tMax, v.intrinsicAcceleration.bind(v))
+  ephemeris.flowWithAdaptiveStep(v.trajectory, ephemeris.tMax, v.intrinsicAcceleration.bind(v))
 })
 
 /** @type {HTMLCanvasElement} */
@@ -494,14 +494,11 @@ function adjustManeuver() {
 
   // If the draggingTrajectoryLen is less than 80, make the duration shorter.
   // If it's more than 80, make the duration longer.
-  if (draggingTrajectoryLen < 80) {
-    currentManeuver.duration = Math.max(0, currentManeuver.duration - 1)
-  } else if (draggingTrajectoryLen > 80) {
-    currentManeuver.duration = Math.min(1000, currentManeuver.duration + 1)
-  }
-  console.log(currentManeuver.duration)
+  const delta = (draggingTrajectoryLen - 80) / 70
+  const dDuration = delta >= 0 ? Math.pow(delta, 2) : -Math.pow(-delta, 2)
+  currentManeuver.duration += dDuration
   maneuverVessel.trajectory.forgetAfter(currentManeuver.startTime)
-  ephemeris.flow(maneuverVessel.trajectory, ephemeris.tMax, maneuverVessel.intrinsicAcceleration.bind(maneuverVessel))
+  ephemeris.flowWithAdaptiveStep(maneuverVessel.trajectory, ephemeris.tMax, maneuverVessel.intrinsicAcceleration.bind(maneuverVessel))
   requestDraw()
   requestAnimationFrame(adjustManeuver)
 }
@@ -570,7 +567,7 @@ function drawUI(ctx) {
       ctx.rect(0, 0, canvas.width, canvas.height)
       ctx.on?.('mousemove', (e) => {
         const a = vdot(vsub(e, screenPos), normal)
-        draggingTrajectoryLen = Math.min(160, Math.max(10, a))
+        draggingTrajectoryLen = Math.min(150, Math.max(10, a))
       })
       ctx.on?.('mouseup', () => {
         draggingTrajectory = false
@@ -694,7 +691,7 @@ const Hour = 60 * Minute
 function simUntil(t) {
   ephemeris.prolong(t + 1 * Hour)
   vessels.forEach(v => {
-    ephemeris.flow(v.trajectory, ephemeris.tMax)
+    ephemeris.flowWithAdaptiveStep(v.trajectory, ephemeris.tMax)
   })
   currentTime = t
   requestDraw()

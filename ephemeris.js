@@ -1,5 +1,11 @@
+// @ts-check
+
+/** @typedef { import("./types").Vec2 } Vec2 */
+
+import { DormandالمكاوىPrince1986RKN434FM, ODEState, solveEmbeddedExplicitRungeKuttaNyström } from "./integrators.js"
 import { newhallApproximationInMonomialBasis } from "./newhall.js"
 
+/** @type { import("./types").Ops<Vec2> } */
 const vops = {
   add(a, b) {
     return { x: a.x + b.x, y: a.y + b.y }
@@ -11,9 +17,12 @@ const vops = {
     return { x: a.x * s, y: a.y * s }
   },
   norm(a) {
-    return Math.sqrt(a.x * a.x + a.y * a.y)
+    return Math.hypot(a.x, a.y)
   },
-  zero: Object.freeze({ x: 0, y: 0 }),
+  norm2(a) {
+    return a.x * a.x + a.y * a.y
+  },
+  get zero() { return { x: 0, y: 0 } },
 }
 
 const G = 6.67408e-11
@@ -195,6 +204,10 @@ export class Trajectory {
     this.#points.splice(i + 1)
   }
 
+  /**
+   * @param {number} t
+   * @returns {Vec2}
+   */
   evaluatePosition(t) {
     if (t === this.#points[this.#points.length - 1].time) {
       return this.#points[this.#points.length - 1].position
@@ -213,6 +226,11 @@ export class Trajectory {
     return vops.add(q0, vops.scale(vops.sub(q1, q0), (t - t0) / (t1 - t0)))
   }
 
+  /**
+   *
+   * @param {number} t
+   * @returns {Vec2}
+   */
   evaluateVelocity(t) {
     if (t === this.#points[this.#points.length - 1].time) {
       return this.#points[this.#points.length - 1].velocity
@@ -283,18 +301,113 @@ export class Ephemeris {
     }
   }
 
-  flow(trajectory, t, intrinsicAcceleration = () => vops.zero, step = this.#step / 10) {
+  /**
+   * @param {Trajectory} trajectory
+   * @param {number} t
+   * @param {(t: number, p: Vec2) => Vec2} intrinsicAcceleration
+   * @param {*} parameters
+   */
+  flowWithAdaptiveStep(trajectory, t, intrinsicAcceleration, parameters = {lengthIntegrationTolerance: 1, speedIntegrationTolerance: 1, maxSteps: 1000}) {
     this.prolong(t)
-    while (trajectory.tMax < t) {
-      const tInitial = trajectory.tMax
-      const { position, velocity } = integrate(
-        (state, t) => vops.add(intrinsicAcceleration(t), gravitation(this.#trajectories.map((traj, i) => ({position: traj.evaluatePosition(tInitial), mass: this.#bodies[i].mass})), -1, state.position)),
-        { position: trajectory.evaluatePosition(tInitial), velocity: trajectory.evaluateVelocity(tInitial) },
-        tInitial,
-        step
-      )
-      trajectory.append(tInitial + step, position, velocity)
+    const trajectoryLastTime = trajectory.tMax
+    const trajectoryLastPosition = trajectory.evaluatePosition(trajectoryLastTime)
+    const trajectoryLastVelocity = trajectory.evaluateVelocity(trajectoryLastTime)
+    const initialState = new ODEState(
+      vops,
+      trajectoryLastTime,
+      [trajectoryLastPosition],
+      [trajectoryLastVelocity]
+    )
+    const integratorParameters = {
+      firstStep: t - initialState.time.value,
+      safetyFactor: 0.9,
+      lastStepIsExact: true,
+      maxSteps: parameters.maxSteps
     }
+    const toleranceToErrorRatio = this.toleranceToErrorRatio.bind(this, parameters.lengthIntegrationTolerance, parameters.speedIntegrationTolerance)
+    const appendState = (state) => {
+      trajectory.append(state.time.value, state.positions[0].value, state.velocities[0].value)
+    }
+    /**
+     * @param {number} t
+     * @param {Array<Vec2>} positions
+     * @param {Array<Vec2>} accelerations
+     */
+    const computeAccelerations = (t, positions, accelerations) => {
+      this.computeGravitationalAccelerationByAllMassiveBodiesOnMasslessBodies(t, positions, accelerations)
+      const a = intrinsicAcceleration(t, positions[0])
+      accelerations[0].x += a.x
+      accelerations[0].y += a.y
+    }
+    const instance = {
+      currentState: initialState,
+      parameters: integratorParameters,
+      computeAccelerations,
+      step: integratorParameters.firstStep,
+      appendState,
+      toleranceToErrorRatio,
+    }
+
+    solveEmbeddedExplicitRungeKuttaNyström(
+      vops,
+      instance,
+      DormandالمكاوىPrince1986RKN434FM,
+      t,
+    )
+  }
+
+  /**
+   * @param {number} t
+   * @param {Array<Vec2>} positions
+   * @param {Array<Vec2>} accelerations
+   */
+  computeGravitationalAccelerationByAllMassiveBodiesOnMasslessBodies(t, positions, accelerations) {
+    for (const a of accelerations) a.x = a.y = 0
+    for (let i = 0; i < this.#bodies.length; ++i)
+      this.computeGravitationalAccelerationByMassiveBodyOnMasslessBodies(t, i, positions, accelerations)
+  }
+
+  /**
+   * @param {number} t
+   * @param {number} bodyIndex
+   * @param {Array<Vec2>} positions
+   * @param {Array<Vec2>} accelerations
+   */
+  computeGravitationalAccelerationByMassiveBodyOnMasslessBodies(t, bodyIndex, positions, accelerations) {
+    const µ1 = this.#bodies[bodyIndex].mass * G
+    const trajectory = this.#trajectories[bodyIndex]
+    const position = trajectory.evaluatePosition(t)
+
+    for (let b2 = 0; b2 < positions.length; ++b2) {
+      const dq = vops.sub(position, positions[b2])
+
+      const dq2 = vops.norm2(dq)
+      const dqNorm = Math.sqrt(dq2)
+      const oneOverDq3 = dqNorm / (dq2 * dq2)
+      const µ1OverDq3 = µ1 * oneOverDq3
+      accelerations[b2].x += dq.x * µ1OverDq3
+      accelerations[b2].y += dq.y * µ1OverDq3
+    }
+  }
+
+  /**
+   * @param {number} lengthTolerance
+   * @param {number} speedTolerance
+   * @param {number} currentStepSize
+   * @param {ODEState<{x: number, y: number}>} _state
+   * @param {{ positionError: Array<{x: number, y: number}>, velocityError: Array<{x: number, y: number}> }} error
+   */
+  toleranceToErrorRatio(lengthTolerance, speedTolerance, currentStepSize, _state, error) {
+    let maxLengthError = 0
+    let maxSpeedError = 0
+    for (const positionError of error.positionError)
+      maxLengthError = Math.max(maxLengthError, vops.norm(positionError))
+    for (const velocityError of error.velocityError)
+      maxSpeedError = Math.max(maxSpeedError, vops.norm(velocityError))
+    return Math.min(
+      lengthTolerance / maxLengthError,
+      speedTolerance / maxSpeedError
+    )
   }
 }
 
