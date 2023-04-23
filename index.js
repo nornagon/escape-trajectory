@@ -139,6 +139,10 @@ class Vessel {
   }
 }
 
+const Second = 1
+const Minute = 60 * Second
+const Hour = 60 * Minute
+
 /// WORLD STATE
 const vessels = [
   new Vessel({
@@ -165,6 +169,24 @@ window.ephemeris = ephemeris
 
 let currentTime = 0
 
+function simUntil(t) {
+  ephemeris.prolong(t + 1 * Hour)
+  vessels.forEach(v => {
+    for (const m of v.maneuvers) {
+      const lastSimulatedTime = v.trajectory.tMax
+      if (m.startTime < lastSimulatedTime)
+        continue
+      // Coast until maneuver start
+      ephemeris.flowWithAdaptiveStep(v.trajectory, m.startTime)
+      // Burn until maneuver end
+      ephemeris.flowWithAdaptiveStep(v.trajectory, m.endTime, v.intrinsicAcceleration.bind(v))
+    }
+    // Coast until tMax
+    ephemeris.flowWithAdaptiveStep(v.trajectory, ephemeris.tMax)
+  })
+  currentTime = t
+}
+
 /// UI STATE
 
 let pan = {x: 0, y: 0}
@@ -180,11 +202,7 @@ let draggingTrajectory = false
 let draggingTrajectoryLen = 0
 
 /// SETUP
-//ephemeris.prolong(365.25 * 24 * 60 * 60)
-ephemeris.prolong(1 * 60 * 60)
-vessels.forEach(v => {
-  ephemeris.flowWithAdaptiveStep(v.trajectory, ephemeris.tMax, v.intrinsicAcceleration.bind(v))
-})
+simUntil(currentTime)
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
@@ -498,7 +516,7 @@ function adjustManeuver() {
   const dDuration = delta >= 0 ? Math.pow(delta, 2) : -Math.pow(-delta, 2)
   currentManeuver.duration += dDuration
   maneuverVessel.trajectory.forgetAfter(currentManeuver.startTime)
-  ephemeris.flowWithAdaptiveStep(maneuverVessel.trajectory, ephemeris.tMax, maneuverVessel.intrinsicAcceleration.bind(maneuverVessel))
+  simUntil(currentTime)
   requestDraw()
   requestAnimationFrame(adjustManeuver)
 }
@@ -684,29 +702,19 @@ function requestDraw() {
   }
 }
 
-const Second = 1
-const Minute = 60 * Second
-const Hour = 60 * Minute
-
-function simUntil(t) {
-  ephemeris.prolong(t + 1 * Hour)
-  vessels.forEach(v => {
-    ephemeris.flowWithAdaptiveStep(v.trajectory, ephemeris.tMax)
-  })
-  currentTime = t
-  requestDraw()
-}
-
 step.onclick = () => {
   simUntil(currentTime + ephemeris.step)
+  requestDraw()
 }
 
 step10.onclick = () => {
   simUntil(currentTime + ephemeris.step * 10)
+  requestDraw()
 }
 
 step100.onclick = () => {
   simUntil(currentTime + ephemeris.step * 100)
+  requestDraw()
 }
 
 let timeLoop = null
@@ -719,6 +727,7 @@ function loop(t) {
     const dt = t - last
     last = t
     simUntil(currentTime + dt / 1000)
+    requestDraw()
   }
 }
 

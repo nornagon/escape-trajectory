@@ -201,7 +201,7 @@ export class Trajectory {
 
   forgetAfter(t) {
     const i = lowerBound(this.#points, (p) => p.time < t)
-    this.#points.splice(i + 1)
+    this.#points.splice(i)
   }
 
   /**
@@ -307,7 +307,7 @@ export class Ephemeris {
    * @param {(t: number, p: Vec2) => Vec2} intrinsicAcceleration
    * @param {*} parameters
    */
-  flowWithAdaptiveStep(trajectory, t, intrinsicAcceleration, parameters = {lengthIntegrationTolerance: 1, speedIntegrationTolerance: 1, maxSteps: 1000}) {
+  flowWithAdaptiveStep(trajectory, t, intrinsicAcceleration = (() => vops.zero), parameters = {lengthIntegrationTolerance: 1, speedIntegrationTolerance: 1, maxSteps: 1000}) {
     this.prolong(t)
     const trajectoryLastTime = trajectory.tMax
     const trajectoryLastPosition = trajectory.evaluatePosition(trajectoryLastTime)
