@@ -39,8 +39,10 @@ const vadd = (a, b) => ({x: a.x + b.x, y: a.y + b.y})
 const vsub = (a, b) => ({x: a.x - b.x, y: a.y - b.y})
 const vscale = (v, s) => ({x: v.x * s, y: v.y * s})
 const vdot = (a, b) => a.x * b.x + a.y * b.y
+const vneg = v => ({x: -v.x, y: -v.y})
 const vlen = v => Math.hypot(v.x, v.y)
 const vnormalize = v => vscale(v, 1 / vlen(v))
+const vperp = v => ({x: -v.y, y: v.x})
 const vrotate = (v, a) => ({
   x: v.x * Math.cos(a) - v.y * Math.sin(a),
   y: v.x * Math.sin(a) + v.y * Math.cos(a),
@@ -64,11 +66,13 @@ class Maneuver {
   #duration
   #initialMass
   #direction
+  #initialDirection
 
   constructor({ startTime, duration, direction, initialMass }) {
     this.#startTime = startTime
     this.#duration = duration
     this.#direction = vnormalize(direction)
+    this.#initialDirection = this.#direction
     this.#initialMass = initialMass
   }
 
@@ -76,6 +80,8 @@ class Maneuver {
   get duration() { return this.#duration }
   set duration(d) { this.#duration = d }
   get direction() { return this.#direction }
+  set direction(d) { this.#direction = vnormalize(d) }
+  get initialDirection() { return this.#initialDirection }
   get endTime() { return this.#startTime + this.#duration }
 
   inertialIntrinsicAcceleration(t) {
@@ -200,6 +206,7 @@ let maneuverVessel = null
 
 let draggingTrajectory = false
 let draggingTrajectoryLen = 0
+let draggingTrajectoryDir = null
 
 /// SETUP
 simUntil(currentTime)
@@ -514,7 +521,22 @@ function adjustManeuver() {
   // If it's more than 80, make the duration longer.
   const delta = (draggingTrajectoryLen - 80) / 70
   const dDuration = delta >= 0 ? Math.pow(delta, 2) : -Math.pow(-delta, 2)
-  currentManeuver.duration += dDuration
+
+  const prograde = currentManeuver.initialDirection
+  const normal = vperp(prograde)
+  const durationChangeDir = vadd(
+    vscale(prograde, draggingTrajectoryDir.prograde),
+    vscale(normal, draggingTrajectoryDir.normal)
+  )
+
+  const durationVec = vscale(currentManeuver.direction, currentManeuver.duration)
+  const newDurationVec = vadd(durationVec, vscale(durationChangeDir, dDuration))
+
+  const newDuration = vlen(newDurationVec)
+  const newDirection = newDuration === 0 ? prograde : vnormalize(newDurationVec)
+
+  currentManeuver.duration = newDuration
+  currentManeuver.direction = newDirection
   maneuverVessel.trajectory.forgetAfter(currentManeuver.startTime)
   simUntil(currentTime)
   requestDraw()
@@ -562,21 +584,42 @@ function drawUI(ctx) {
     ctx.fill()
     ctx.stroke()
 
-    const normal = currentManeuver.direction
+    const prograde = currentManeuver.initialDirection
     const len = draggingTrajectory ? draggingTrajectoryLen : 80
+    const progradeLen = draggingTrajectoryDir?.prograde === 1 ? draggingTrajectoryLen : 80
+    const retrogradeLen = draggingTrajectoryDir?.prograde === -1 ? draggingTrajectoryLen : 80
     ctx.beginPath()
-    ctx.moveTo(screenPos.x + normal.x * 10, screenPos.y + normal.y * 10)
-    ctx.lineTo(screenPos.x + normal.x * len, screenPos.y + normal.y * len)
+    ctx.moveTo(screenPos.x + prograde.x * 10, screenPos.y + prograde.y * 10)
+    ctx.lineTo(
+      screenPos.x + prograde.x * progradeLen,
+      screenPos.y + prograde.y * progradeLen
+    )
+    ctx.moveTo(screenPos.x + -prograde.x * 10, screenPos.y + -prograde.y * 10)
+    ctx.lineTo(
+      screenPos.x + -prograde.x * retrogradeLen,
+      screenPos.y + -prograde.y * retrogradeLen
+    )
     ctx.stroke()
 
     ctx.fillStyle = '#0f0'
     ctx.strokeStyle = 'black'
-    polygon(ctx, vadd(screenPos, vscale(normal, len)), 3, 10, -Math.PI / 2)
+    polygon(ctx, vadd(screenPos, vscale(prograde, progradeLen)), 3, 10, -Math.PI / 2)
     ctx.stroke()
     ctx.fill()
     ctx.on?.('mousedown', () => {
       draggingTrajectory = true;
       draggingTrajectoryLen = 80
+      draggingTrajectoryDir = { prograde: 1, normal: 0 }
+      adjustManeuver()
+    })
+
+    polygon(ctx, vadd(screenPos, vscale(prograde, -retrogradeLen)), 3, 10, Math.PI / 2)
+    ctx.stroke()
+    ctx.fill()
+    ctx.on?.('mousedown', () => {
+      draggingTrajectory = true;
+      draggingTrajectoryLen = 80
+      draggingTrajectoryDir = { prograde: -1, normal: 0 }
       adjustManeuver()
     })
 
@@ -584,11 +627,13 @@ function drawUI(ctx) {
       ctx.beginPath()
       ctx.rect(0, 0, canvas.width, canvas.height)
       ctx.on?.('mousemove', (e) => {
-        const a = vdot(vsub(e, screenPos), normal)
+        const vec = draggingTrajectoryDir.prograde === 1 ? prograde : vneg(prograde)
+        const a = vdot(vsub(e, screenPos), vec)
         draggingTrajectoryLen = Math.min(150, Math.max(10, a))
       })
       ctx.on?.('mouseup', () => {
         draggingTrajectory = false
+        draggingTrajectoryDir = null
       })
     }
   } else if (trajectoryHoverPoint) {
