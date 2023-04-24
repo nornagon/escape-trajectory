@@ -523,10 +523,10 @@ function adjustManeuver() {
   const dDuration = delta >= 0 ? Math.pow(delta, 2) : -Math.pow(-delta, 2)
 
   const prograde = currentManeuver.initialDirection
-  const normal = vperp(prograde)
+  const radial = vperp(prograde)
   const durationChangeDir = vadd(
     vscale(prograde, draggingTrajectoryDir.prograde),
-    vscale(normal, draggingTrajectoryDir.normal)
+    vscale(radial, draggingTrajectoryDir.radial)
   )
 
   const durationVec = vscale(currentManeuver.direction, currentManeuver.duration)
@@ -585,9 +585,11 @@ function drawUI(ctx) {
     ctx.stroke()
 
     const prograde = currentManeuver.initialDirection
-    const len = draggingTrajectory ? draggingTrajectoryLen : 80
+    const radial = vperp(prograde)
     const progradeLen = draggingTrajectoryDir?.prograde === 1 ? draggingTrajectoryLen : 80
     const retrogradeLen = draggingTrajectoryDir?.prograde === -1 ? draggingTrajectoryLen : 80
+    const radialLen = draggingTrajectoryDir?.radial === 1 ? draggingTrajectoryLen : 80
+    const antiRadialLen = draggingTrajectoryDir?.radial === -1 ? draggingTrajectoryLen : 80
     ctx.beginPath()
     ctx.moveTo(screenPos.x + prograde.x * 10, screenPos.y + prograde.y * 10)
     ctx.lineTo(
@@ -599,6 +601,16 @@ function drawUI(ctx) {
       screenPos.x + -prograde.x * retrogradeLen,
       screenPos.y + -prograde.y * retrogradeLen
     )
+    ctx.moveTo(screenPos.x + radial.x * 10, screenPos.y + radial.y * 10)
+    ctx.lineTo(
+      screenPos.x + radial.x * radialLen,
+      screenPos.y + radial.y * radialLen
+    )
+    ctx.moveTo(screenPos.x + -radial.x * 10, screenPos.y + -radial.y * 10)
+    ctx.lineTo(
+      screenPos.x + -radial.x * antiRadialLen,
+      screenPos.y + -radial.y * antiRadialLen
+    )
     ctx.stroke()
 
     ctx.fillStyle = '#0f0'
@@ -609,7 +621,7 @@ function drawUI(ctx) {
     ctx.on?.('mousedown', () => {
       draggingTrajectory = true;
       draggingTrajectoryLen = 80
-      draggingTrajectoryDir = { prograde: 1, normal: 0 }
+      draggingTrajectoryDir = { prograde: 1, radial: 0 }
       adjustManeuver()
     })
 
@@ -619,7 +631,28 @@ function drawUI(ctx) {
     ctx.on?.('mousedown', () => {
       draggingTrajectory = true;
       draggingTrajectoryLen = 80
-      draggingTrajectoryDir = { prograde: -1, normal: 0 }
+      draggingTrajectoryDir = { prograde: -1, radial: 0 }
+      adjustManeuver()
+    })
+
+    ctx.fillStyle = '#00d7d6'
+    polygon(ctx, vadd(screenPos, vscale(radial, radialLen)), 4, 10, Math.PI / 2)
+    ctx.stroke()
+    ctx.fill()
+    ctx.on?.('mousedown', () => {
+      draggingTrajectory = true;
+      draggingTrajectoryLen = 80
+      draggingTrajectoryDir = { prograde: 0, radial: 1 }
+      adjustManeuver()
+    })
+
+    polygon(ctx, vadd(screenPos, vscale(radial, -antiRadialLen)), 4, 10, -Math.PI / 2)
+    ctx.stroke()
+    ctx.fill()
+    ctx.on?.('mousedown', () => {
+      draggingTrajectory = true;
+      draggingTrajectoryLen = 80
+      draggingTrajectoryDir = { prograde: 0, radial: -1 }
       adjustManeuver()
     })
 
@@ -627,7 +660,12 @@ function drawUI(ctx) {
       ctx.beginPath()
       ctx.rect(0, 0, canvas.width, canvas.height)
       ctx.on?.('mousemove', (e) => {
-        const vec = draggingTrajectoryDir.prograde === 1 ? prograde : vneg(prograde)
+        const prograde = currentManeuver.initialDirection
+        const radial = vperp(prograde)
+        const vec = vadd(
+          vscale(prograde, draggingTrajectoryDir.prograde),
+          vscale(radial, draggingTrajectoryDir.radial)
+        )
         const a = vdot(vsub(e, screenPos), vec)
         draggingTrajectoryLen = Math.min(150, Math.max(10, a))
       })
