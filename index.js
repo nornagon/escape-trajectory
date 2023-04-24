@@ -1,6 +1,21 @@
 import { Ephemeris, Trajectory } from "./ephemeris.js"
 import { cohenSutherlandLineClip } from "./geometry.js"
 
+// Format the given duration as Wd Xh Ym Zs, where W=days, X=hours, Y=minutes, Z=seconds
+// If days is 0, omit it. If hours is 0, omit it. If minutes is 0, omit it.
+function formatDuration(seconds) {
+  let days = Math.floor(seconds / 86400)
+  let hours = Math.floor((seconds % 86400) / 3600)
+  let minutes = Math.floor((seconds % 3600) / 60)
+  let seconds2 = Math.floor(seconds % 60)
+  let result = ""
+  if (days > 0) result += `${days}d `
+  if (hours > 0) result += `${hours}h `
+  if (minutes > 0) result += `${minutes}m `
+  result += `${seconds2}s`
+  return result
+}
+
 const celestials = [
   { name: "Sun", mass: 1.98855e30, position: {x: 0, y: 0}, velocity: {x: 0, y: 0}, radius: 695700e3, color: "#ff0" },
 
@@ -297,11 +312,11 @@ class InteractionContext2D {
     this.#currentPath.arc(x, y, r, a0, a1)
   }
 
-  stroke() {
-  }
+  stroke() {}
 
-  fill() {
-  }
+  fill() {}
+
+  fillText() {}
 
   closePath() {
     this.#currentPath.closePath()
@@ -583,6 +598,14 @@ function drawUI(ctx) {
     ctx.arc(screenPos.x, screenPos.y, 10, 0, 2 * Math.PI)
     ctx.fill()
     ctx.stroke()
+
+    if (currentManeuver.startTime > currentTime) {
+      ctx.fillStyle = 'white'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+      ctx.font = '18px sans-serif'
+      ctx.fillText('T–' + formatDuration(currentManeuver.startTime - currentTime), screenPos.x, screenPos.y + 20)
+    }
 
     const prograde = currentManeuver.initialDirection
     const radial = vperp(prograde)
