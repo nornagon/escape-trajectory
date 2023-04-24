@@ -185,6 +185,7 @@ function lowerBound(array, compare) {
 }
 
 export class Trajectory {
+  /** @type {Array<{time: number, position: Vec2, velocity: Vec2}>} */
   #points = []
   constructor(initial) {
     if (initial)
@@ -199,6 +200,9 @@ export class Trajectory {
     return this.#points.length ? this.#points[this.#points.length - 1].time : 0
   }
 
+  /**
+   * @param {number} t
+   */
   forgetAfter(t) {
     const i = lowerBound(this.#points, (p) => p.time < t)
     this.#points.splice(i)

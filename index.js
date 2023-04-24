@@ -191,7 +191,7 @@ window.ephemeris = ephemeris
 let currentTime = 0
 
 function simUntil(t) {
-  ephemeris.prolong(t + 1 * Hour)
+  ephemeris.prolong(t + 10 * Hour)
   vessels.forEach(v => {
     for (const m of v.maneuvers) {
       const lastSimulatedTime = v.trajectory.tMax
@@ -357,24 +357,6 @@ canvas.addEventListener("mousedown", event => {
   const x0 = event.offsetX - canvas.width / 2 - pan.x
   const y0 = event.offsetY - canvas.height / 2 - pan.y
 
-  for (let i = 0; i < ephemeris.bodies.length; i++) {
-    const trajectory = ephemeris.trajectories[i]
-    const currentPosition = trajectory.evaluatePosition(currentTime)
-    const screenPos = worldToScreen(currentPosition)
-
-    const dx = screenPos.x - event.offsetX
-    const dy = screenPos.y - event.offsetY
-    const r = Math.sqrt(dx * dx + dy * dy)
-    if (r < Math.max(10, zoom / 1e9 * ephemeris.bodies[i].radius)) {
-      originBodyIndex = i
-      pan.x = 0
-      pan.y = 0
-
-      requestDraw()
-      return
-    }
-  }
-
   let dragged = false
   function mousemove(event) {
     pan.x = event.offsetX - canvas.width / 2 - x0
@@ -389,6 +371,24 @@ canvas.addEventListener("mousedown", event => {
     window.removeEventListener("mouseup", mouseup)
     window.removeEventListener("blur", mouseup)
     if (!dragged) {
+      for (let i = 0; i < ephemeris.bodies.length; i++) {
+        const trajectory = ephemeris.trajectories[i]
+        const currentPosition = trajectory.evaluatePosition(currentTime)
+        const screenPos = worldToScreen(currentPosition)
+
+        const dx = screenPos.x - event.offsetX
+        const dy = screenPos.y - event.offsetY
+        const r = Math.sqrt(dx * dx + dy * dy)
+        if (r < Math.max(10, zoom / 1e9 * ephemeris.bodies[i].radius)) {
+          originBodyIndex = i
+          pan.x = 0
+          pan.y = 0
+
+          requestDraw()
+          return
+        }
+      }
+
       const point = findNearestTrajectory(event)
       if (point) {
         const vessel = vessels[point.i]
@@ -398,9 +398,9 @@ canvas.addEventListener("mousedown", event => {
       } else {
         if (currentManeuver?.duration === 0) {
           maneuverVessel.removeManeuver(currentManeuver)
-          currentManeuver = null
-          maneuverVessel = null
         }
+        currentManeuver = null
+        maneuverVessel = null
       }
       requestDraw()
     }
@@ -482,7 +482,7 @@ function trajectoryPosInFrame(trajectory, t) {
 }
 
 function* trajectorySegment(trajectory, t0, t1) {
-  const minSubdivisionDistance = 1e9/zoom * 10
+  const minSubdivisionDistance = 1e9/zoom * 2
 
   const p0 = trajectoryPosInFrame(trajectory, t0)
   const p1 = trajectoryPosInFrame(trajectory, t1)
@@ -496,7 +496,12 @@ function* trajectorySegment(trajectory, t0, t1) {
   }
 }
 
-function* trajectoryPoints(trajectory, t0, t1, step = 100 * 60 * 8) {
+function* trajectoryPoints(trajectory, t0, t1) {
+  // Get the velocity at t0, use that to set the step.
+  const v0 = trajectory.evaluateVelocity(t0)
+  const s = vlen(v0)
+  // |s| is in m/s, so we want to step by 1e9/zoom pixels.
+  const step = s === 0 ? 100 * 60 * 8 : 1000e9/zoom / s
   for (let t = t0; t < t1; t += step) {
     yield* trajectorySegment(trajectory, t, Math.min(t + step, t1))
   }
