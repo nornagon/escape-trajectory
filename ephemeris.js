@@ -200,11 +200,17 @@ export class Trajectory {
     return this.#points.length ? this.#points[this.#points.length - 1].time : 0
   }
 
+  *segments() {
+    for (let i = 1; i < this.#points.length; i++) {
+      yield [this.#points[i - 1], this.#points[i]]
+    }
+  }
+
   /**
    * @param {number} t
    */
   forgetAfter(t) {
-    const i = lowerBound(this.#points, (p) => p.time < t)
+    const i = lowerBound(this.#points, (p) => p.time <= t)
     this.#points.splice(i)
   }
 
@@ -311,7 +317,7 @@ export class Ephemeris {
    * @param {(t: number, p: Vec2) => Vec2} intrinsicAcceleration
    * @param {*} parameters
    */
-  flowWithAdaptiveStep(trajectory, t, intrinsicAcceleration = (() => vops.zero), parameters = {lengthIntegrationTolerance: 1, speedIntegrationTolerance: 1, maxSteps: 1000}) {
+  flowWithAdaptiveStep(trajectory, t, intrinsicAcceleration = (() => vops.zero), parameters = {lengthIntegrationTolerance: 1, speedIntegrationTolerance: 1, maxSteps: Infinity}) {
     this.prolong(t)
     const trajectoryLastTime = trajectory.tMax
     const trajectoryLastPosition = trajectory.evaluatePosition(trajectoryLastTime)

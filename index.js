@@ -1,5 +1,25 @@
 import { Ephemeris, Trajectory } from "./ephemeris.js"
 import { cohenSutherlandLineClip } from "./geometry.js"
+import RBush from 'https://cdn.skypack.dev/rbush'
+
+class TwoPointRBush extends RBush {
+  toBBox([a, b]) {
+    return {
+      minX: Math.min(a.x, b.x),
+      minY: Math.min(a.y, b.y),
+      maxX: Math.max(a.x, b.x),
+      maxY: Math.max(a.y, b.y),
+    }
+  }
+
+  compareMinX(a, b) {
+    return Math.min(a[0].x, a[1].x) - Math.min(b[0].x, b[1].x)
+  }
+
+  compareMinY(a, b) {
+    return Math.min(a[0].y, a[1].y) - Math.min(b[0].y, b[1].y)
+  }
+}
 
 // Format the given duration as Wd Xh Ym Zs, where W=days, X=hours, Y=minutes, Z=seconds
 // If days is 0, omit it. If hours is 0, omit it. If minutes is 0, omit it.
@@ -63,6 +83,11 @@ const vrotate = (v, a) => ({
   y: v.x * Math.sin(a) + v.y * Math.cos(a),
 })
 const vproject = (a, b) => vscale(b, vdot(a, b) / vlen(b))
+function vlerp(p1, p2, t) {
+  if (t === 0) return p1
+  if (t === 1) return p2
+  return {x: lerp(p1.x, p2.x, t), y: lerp(p1.y, p2.y, t)}
+}
 const earth = celestials.find(c => c.name === 'Earth')
 const G = 6.67408e-11
 function orbitalVelocity(m1, m2, r) {
@@ -163,6 +188,7 @@ class Vessel {
 const Second = 1
 const Minute = 60 * Second
 const Hour = 60 * Minute
+const Day = 24 * Hour
 
 /// WORLD STATE
 const vessels = [
@@ -190,6 +216,9 @@ window.ephemeris = ephemeris
 
 let currentTime = 0
 
+let trajectoryRBushes = new WeakMap
+let trajectoryBBTrees = new WeakMap
+
 function simUntil(t) {
   ephemeris.prolong(t + 10 * Hour)
   vessels.forEach(v => {
@@ -206,6 +235,8 @@ function simUntil(t) {
     ephemeris.flowWithAdaptiveStep(v.trajectory, ephemeris.tMax)
   })
   currentTime = t
+  trajectoryRBushes = new WeakMap
+  trajectoryBBTrees = new WeakMap
 }
 
 /// UI STATE
@@ -256,20 +287,44 @@ canvas.addEventListener("wheel", event => {
   requestDraw()
 })
 
-function findNearestTrajectory({x, y}) {
-  const tMax = ephemeris.tMax
+// Find the closest point on a segment to a given point
+function closestTOnSegment(p1, p2, {x: x0, y: y0}) {
+  const {x: x1, y: y1} = p1
+  const {x: x2, y: y2} = p2
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const d2 = dx * dx + dy * dy
+  if (d2 === 0)
+    return 0
+  const t = ((x0 - x1) * dx + (y0 - y1) * dy) / d2
+  return Math.max(0, Math.min(1, t))
+}
+function lerp(a, b, t) {
+  return a + (b - a) * t
+}
+function closestPointOnSegment(p1, p2, s) {
+  return vlerp(p1, p2, closestTOnSegment(p1, p2, s))
+}
+
+function findNearestTrajectory(screenPos) {
+  const {x, y} = screenPos
   let closestP = 0
   let closestD = Infinity
   let closestI = -1
   vessels.forEach((vessel, i) => {
-    // Find the closest point on |trajectory|
-    for (const point of trajectoryPoints(vessel.trajectory, 0, tMax)) {
-      if (point.t >= currentTime) {
-        const p = worldToScreenWithoutOrigin(point)
+    // Find the closestPointpoint on |trajectory|
+    for (const [a, b] of vessel.trajectory.segments()) {
+      const aScreenPos = worldToScreen(a.position, a.time)
+      const bScreenPos = worldToScreen(b.position, b.time)
+      const t = closestTOnSegment(aScreenPos, bScreenPos, screenPos)
+      const time = lerp(a.time, b.time, t)
+      if (time >= currentTime) {
+        const p = vlerp(aScreenPos, bScreenPos, t)
+        p.t = time
         const d = Math.hypot(p.x - x, p.y - y)
         if (d < closestD) {
           closestD = d
-          closestP = point
+          closestP = p
           closestI = i
         }
       }
@@ -434,9 +489,9 @@ canvas.addEventListener("mouseup", event => {
 })
 
 
-function worldToScreen(pos) {
+function worldToScreen(pos, t = currentTime) {
   const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
-  const originBodyPosition = originBodyTrajectory.evaluatePosition(currentTime)
+  const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
     x: (pos.x - originBodyPosition.x) / 1e9 * zoom + canvas.width / 2 + pan.x,
     y: (pos.y - originBodyPosition.y) / 1e9 * zoom + canvas.height / 2 + pan.y,
@@ -469,10 +524,116 @@ function clipPoint(p) {
   return sx >= 0 && sx < width && sy >= 0 && sy < height
 }
 
+function bbIntersects(bb1, bb2) {
+  return bb1.minX <= bb2.maxX && bb1.maxX >= bb2.minX && bb1.minY <= bb2.maxY && bb1.maxY >= bb2.minY && bb1.minT <= bb2.maxT && bb1.maxT >= bb2.minT
+}
+function bbContains(bb1, p) {
+  return p.x >= bb1.minX && p.x <= bb1.maxX && p.y >= bb1.minY && p.y <= bb1.maxY && p.t >= bb1.minT && p.t <= bb1.maxT
+}
+
+class BBTree {
+  #layers = [[]]
+  get length() {
+    return this.#layers[0].length
+  }
+  get layers() { return this.#layers }
+  insert(bb) {
+    let i = this.length
+    let j = i << 1
+    let layer = 0
+    do {
+      if (!this.#layers[layer])
+        this.#layers[layer] = [this.#layers[layer - 1][i >> 1]]
+      this.#layers[layer][i] = this.#merge(this.#layers[layer][i], bb)
+      i >>= 1
+      j >>= 1
+      layer++
+    } while (j)
+  }
+  #merge(a, b) {
+    if (!a) return b
+    return {
+      minX: Math.min(a.minX, b.minX),
+      minY: Math.min(a.minY, b.minY),
+      maxX: Math.max(a.maxX, b.maxX),
+      maxY: Math.max(a.maxY, b.maxY),
+      minT: Math.min(a.minT, b.minT),
+      maxT: Math.max(a.maxT, b.maxT),
+    }
+  }
+
+  queryFirst(bbTest) {
+    let layer = this.#layers.length - 1
+    let i = 0
+    let j = 1
+    while (layer >= 0 && i < j && i < this.#layers[layer].length) {
+      const bb = this.#layers[layer][i]
+      if (bbIntersects(bb, bbTest)) {
+        if (layer === 0) {
+          return bb
+        } else {
+          i <<= 1
+          j <<= 1
+          layer--
+        }
+      } else {
+        i++
+      }
+    }
+  }
+}
+
+function bbTreeForTrajectory(trajectory) {
+  let bbtree = trajectoryBBTrees.get(trajectory)
+  if (!bbtree) {
+    bbtree = new BBTree
+    trajectoryBBTrees.set(trajectory, bbtree)
+    for (const [a, b] of trajectory.segments()) {
+      const aPos = trajectoryPosInFrame(trajectory, a.time)
+      const bPos = trajectoryPosInFrame(trajectory, b.time)
+      bbtree.insert({
+        minX: Math.min(aPos.x, bPos.x),
+        minY: Math.min(aPos.y, bPos.y),
+        maxX: Math.max(aPos.x, bPos.x),
+        maxY: Math.max(aPos.y, bPos.y),
+        minT: a.time,
+        maxT: b.time,
+      })
+    }
+  }
+  return bbtree
+}
+
+function rbushForTrajectory(trajectory) {
+  let rbush = trajectoryRBushes.get(trajectory)
+  if (!rbush) {
+    rbush = new TwoPointRBush
+    trajectoryRBushes.set(trajectory, rbush)
+    for (const [a, b] of trajectory.segments()) {
+      const aPos = trajectoryPosInFrame(trajectory, a.time)
+      const bPos = trajectoryPosInFrame(trajectory, b.time)
+      rbush.insert([aPos, bPos])
+    }
+  }
+  return rbush
+}
+
 function trajectoryPosInFrame(trajectory, t) {
   const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
   const q = trajectory.evaluatePosition(t)
   const originQ = originBodyTrajectory.evaluatePosition(t)
+
+  return {
+    x: q.x - originQ.x,
+    y: q.y - originQ.y,
+    t,
+  }
+}
+
+function trajectoryVelocityInFrame(trajectory, t) {
+  const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const q = trajectory.evaluateVelocity(t)
+  const originQ = originBodyTrajectory.evaluateVelocity(t)
 
   return {
     x: q.x - originQ.x,
@@ -487,7 +648,7 @@ function* trajectorySegment(trajectory, t0, t1) {
   const p0 = trajectoryPosInFrame(trajectory, t0)
   const p1 = trajectoryPosInFrame(trajectory, t1)
 
-  if (clipLine(p0, p1) && Math.hypot(p1.x - p0.x, p1.y - p0.y) > minSubdivisionDistance) {
+  if (clipLine(p0, p1) && Math.hypot(p1.x - p0.x, p1.y - p0.y) > minSubdivisionDistance && t1 - t0 >= ephemeris.step) {
     const tMid = (t0 + t1) / 2
     yield* trajectorySegment(trajectory, t0, tMid)
     yield* trajectorySegment(trajectory, tMid, t1)
@@ -501,7 +662,7 @@ function* trajectoryPoints(trajectory, t0, t1) {
   const v0 = trajectory.evaluateVelocity(t0)
   const s = vlen(v0)
   // |s| is in m/s, so we want to step by 1e9/zoom pixels.
-  const step = s === 0 ? 100 * 60 * 8 : 1000e9/zoom / s
+  const step = Math.max(s === 0 ? 100 * 60 * 8 : 1000e9/zoom / s, ephemeris.step / 16)
   for (let t = t0; t < t1; t += step) {
     yield* trajectorySegment(trajectory, t, Math.min(t + step, t1))
   }
@@ -509,8 +670,52 @@ function* trajectoryPoints(trajectory, t0, t1) {
   yield trajectoryPosInFrame(trajectory, t1)
 }
 
+function* trajectoryPoints2(trajectory, t0, t1, opts = {}) {
+  if (t1 === t0) return
+  const { maxPoints = Infinity, resolution = 2e9/zoom } = opts
+  const finalTime = t1
+  let previousTime = t0
+  let previousPosition = trajectoryPosInFrame(trajectory, t0)
+  let previousVelocity = trajectoryVelocityInFrame(trajectory, t0)
+  let dt = finalTime - previousTime
+
+  yield previousPosition
+  let pointsAdded = 1
+
+  let t
+  let estimatedError = NaN
+  let position
+
+  let skipStepUpdate = true
+  while (pointsAdded < maxPoints && previousTime < finalTime) {
+    do {
+      if (!skipStepUpdate)
+        dt *= 0.9 * Math.sqrt(resolution / estimatedError)
+      skipStepUpdate = false
+      t = previousTime + dt
+      if (t > finalTime) {
+        t = finalTime
+        dt = t - previousTime
+      }
+      const extrapolatedPosition = vadd(previousPosition, vscale(previousVelocity, dt))
+      position = trajectoryPosInFrame(trajectory, t)
+
+      // TODO: ??? is this right?
+      estimatedError = Math.hypot(position.x - extrapolatedPosition.x, position.y - extrapolatedPosition.y)
+    } while (estimatedError > resolution)
+
+    previousTime = t
+    previousPosition = position
+    previousVelocity = trajectoryVelocityInFrame(trajectory, t)
+
+    yield position
+    pointsAdded++
+  }
+}
+
 function polyline(ctx, generator) {
   let first = true
+  let n = 0
   for (const p of generator) {
     if (first) {
       ctx.moveTo(p.x, p.y)
@@ -518,7 +723,9 @@ function polyline(ctx, generator) {
     } else {
       ctx.lineTo(p.x, p.y)
     }
+    n++
   }
+  console.log(`polyline: ${n} points`)
 }
 
 function polygon(ctx, c, n, r, startAngle = 0) {
@@ -604,7 +811,7 @@ function drawUI(ctx) {
     ctx.fill()
     ctx.stroke()
 
-    if (currentManeuver.startTime > currentTime) {
+    if (currentManeuver.startTime >= currentTime) {
       ctx.fillStyle = 'white'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
@@ -716,25 +923,79 @@ function drawUI(ctx) {
 }
 
 function drawTrajectory(ctx, trajectory, t0 = 0) {
+  const bbtree = bbTreeForTrajectory(trajectory)
+  const displayBB = {
+    minX: (-canvas.width / 2 - pan.x) / zoom * 1e9,
+    minY: (-canvas.height / 2 - pan.y) / zoom * 1e9,
+    maxX: (canvas.width / 2 - pan.x) / zoom * 1e9,
+    maxY: (canvas.height / 2 - pan.y) / zoom * 1e9,
+    minT: t0,
+    maxT: Infinity
+  }
+  let firstSegment = bbtree.queryFirst(displayBB)
+  if (!firstSegment) return
+
+  ctx.lineWidth = 2
+
   // Past
-  ctx.save()
-  ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
-  ctx.scale(zoom/1e9, zoom/1e9)
-  ctx.beginPath()
-  polyline(ctx, trajectoryPoints(trajectory, t0, currentTime))
-  ctx.restore()
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
-  ctx.stroke()
+  while (firstSegment && firstSegment.minT < currentTime) {
+    const t0 = firstSegment.minT
+    // Render until we're off the screen
+    ctx.save()
+    ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
+    ctx.scale(zoom/1e9, zoom/1e9)
+    ctx.beginPath()
+    let first = true
+    let more = false
+    for (const p of trajectoryPoints2(trajectory, t0, currentTime)) {
+      if (first) {
+        ctx.moveTo(p.x, p.y)
+        first = false
+      } else {
+        ctx.lineTo(p.x, p.y)
+      }
+      if (!bbContains(displayBB, p)) {
+        displayBB.minT = p.t
+        more = true
+        break
+      }
+    }
+    ctx.restore()
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
+    ctx.stroke()
+    if (!more) break;
+    firstSegment = bbtree.queryFirst(displayBB)
+  }
 
   // Future
-  ctx.save()
-  ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
-  ctx.scale(zoom/1e9, zoom/1e9)
-  ctx.beginPath()
-  polyline(ctx, trajectoryPoints(trajectory, currentTime, trajectory.tMax))
-  ctx.restore()
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
-  ctx.stroke()
+  while (firstSegment) {
+    const t0 = firstSegment.minT
+    // Render until we're off the screen
+    ctx.save()
+    ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
+    ctx.scale(zoom/1e9, zoom/1e9)
+    ctx.beginPath()
+    let first = true
+    let more = false
+    for (const p of trajectoryPoints2(trajectory, t0, trajectory.tMax)) {
+      if (first) {
+        ctx.moveTo(p.x, p.y)
+        first = false
+      } else {
+        ctx.lineTo(p.x, p.y)
+      }
+      if (!bbContains(displayBB, p)) {
+        displayBB.minT = p.t
+        more = true
+        break
+      }
+    }
+    ctx.restore()
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+    ctx.stroke()
+    if (!more) break
+    firstSegment = bbtree.queryFirst(displayBB)
+  }
 }
 
 function draw() {
@@ -747,6 +1008,8 @@ function draw() {
 
   const tMax = ephemeris.tMax
   for (const trajectory of ephemeris.trajectories) {
+    const idx = ephemeris.trajectories.indexOf(trajectory)
+    if (idx === originBodyIndex) continue
     drawTrajectory(ctx, trajectory)
   }
 
@@ -770,8 +1033,6 @@ function draw() {
   ctx.restore()
 
   // Draw vessel trajectories
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
-  ctx.lineWidth = 1
   for (const vessel of vessels) {
     drawTrajectory(ctx, vessel.trajectory)
   }
