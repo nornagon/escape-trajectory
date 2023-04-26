@@ -189,6 +189,7 @@ const Second = 1
 const Minute = 60 * Second
 const Hour = 60 * Minute
 const Day = 24 * Hour
+const Month = 30 * Day
 
 /// WORLD STATE
 const vessels = [
@@ -198,12 +199,14 @@ const vessels = [
     initialState: initialState(earth, 200e3 + earth.radius),
     color: "#0f0",
   }),
+  /*
   new Vessel({
     name: "ISS",
     mass: 420e3,
     initialState: initialState(earth, 400e3 + earth.radius),
     color: "#0f0",
   })
+  */
 ]
 
 const ephemeris = new Ephemeris({
@@ -220,7 +223,7 @@ let trajectoryRBushes = new WeakMap
 let trajectoryBBTrees = new WeakMap
 
 function simUntil(t) {
-  ephemeris.prolong(t + 10 * Hour)
+  ephemeris.prolong(t + 10 * Day)
   vessels.forEach(v => {
     for (const m of v.maneuvers) {
       const lastSimulatedTime = v.trajectory.tMax
@@ -240,6 +243,8 @@ function simUntil(t) {
 }
 
 /// UI STATE
+
+let mouse = {x: 0, y: 0}
 
 let pan = {x: 0, y: 0}
 let zoom = 38e3
@@ -467,6 +472,8 @@ canvas.addEventListener("mousedown", event => {
 })
 
 canvas.addEventListener("mousemove", event => {
+  mouse.x = event.offsetX
+  mouse.y = event.offsetY
   /*
   const point = findNearestTrajectory(event)
   trajectoryHoverPoint = point
@@ -497,12 +504,26 @@ function worldToScreen(pos, t = currentTime) {
     y: (pos.y - originBodyPosition.y) / 1e9 * zoom + canvas.height / 2 + pan.y,
   }
 }
+function screenToWorld(pos, t = currentTime) {
+  const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
+  return {
+    x: (pos.x - canvas.width / 2 - pan.x) * 1e9 / zoom + originBodyPosition.x,
+    y: (pos.y - canvas.height / 2 - pan.y) * 1e9 / zoom + originBodyPosition.y,
+  }
+}
 // This version doesn't subtract the origin body's position, so it can be used
 // when drawing trajectories.
 function worldToScreenWithoutOrigin(pos) {
   return {
     x: pos.x / 1e9 * zoom + canvas.width / 2 + pan.x,
     y: pos.y / 1e9 * zoom + canvas.height / 2 + pan.y,
+  }
+}
+function screenToWorldWithoutOrigin(pos) {
+  return {
+    x: (pos.x - canvas.width / 2 - pan.x) * 1e9 / zoom,
+    y: (pos.y - canvas.height / 2 - pan.y) * 1e9 / zoom,
   }
 }
 
@@ -922,7 +943,7 @@ function drawUI(ctx) {
   }
 }
 
-function drawTrajectory(ctx, trajectory, t0 = 0) {
+function makeTrajectoryPath(ctx, trajectory, t0, t1) {
   const bbtree = bbTreeForTrajectory(trajectory)
   const displayBB = {
     minX: (-canvas.width / 2 - pan.x) / zoom * 1e9,
@@ -935,67 +956,116 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
   let firstSegment = bbtree.queryFirst(displayBB)
   if (!firstSegment) return
 
+  ctx.save()
+  ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
+  ctx.scale(zoom/1e9, zoom/1e9)
+  ctx.beginPath()
+  console.group('trajectory')
+  let nSegs = 0
+  while (firstSegment) {
+    nSegs++
+    // Render until we're off the screen
+    let first = true
+    let more = false
+    let startedBeingOnScreen = false
+    let nPoints = 0
+    for (const p of trajectoryPoints2(trajectory, firstSegment.minT, t1)) {
+      if (first) {
+        ctx.moveTo(p.x, p.y)
+        first = false
+      } else {
+        ctx.lineTo(p.x, p.y)
+        if (p.t >= firstSegment.maxT) {
+          startedBeingOnScreen = true
+        }
+        if (startedBeingOnScreen && !bbContains(displayBB, p)) {
+          displayBB.minT = p.t
+          more = true
+          break
+        }
+      }
+      nPoints++
+    }
+    console.log('rendered ' + nPoints + ' points')
+    if (!more) break
+    let nextSegment = bbtree.queryFirst(displayBB)
+    while (nextSegment && displayBB.minT > nextSegment.minT) {
+      displayBB.minT = nextSegment.maxT + 0.0001
+      nextSegment = bbtree.queryFirst(displayBB)
+    }
+    firstSegment = nextSegment
+  }
+  console.log('rendered ' + nSegs + ' segments')
+  console.groupEnd()
+  ctx.restore()
+}
+
+function drawTrajectory(ctx, trajectory, t0 = 0) {
+  /*
+  let first = true
+  ctx.save()
+  ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
+  ctx.scale(zoom/1e9, zoom/1e9)
+  ctx.beginPath()
+  for (const [a,b] of trajectory.segments()) {
+    const p = trajectoryPosInFrame(trajectory, a.time)
+    if (first) {
+      ctx.moveTo(p.x, p.y)
+      first = false
+    }
+    else ctx.lineTo(p.x, p.y)
+  }
+  ctx.restore()
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
+  ctx.lineWidth = 2
+  ctx.stroke()
+  */
+
+  const bbtree = bbTreeForTrajectory(trajectory)
+  const displayBB = {
+    minX: (-canvas.width / 2 - pan.x) / zoom * 1e9,
+    minY: (-canvas.height / 2 - pan.y) / zoom * 1e9,
+    maxX: (canvas.width / 2 - pan.x) / zoom * 1e9,
+    maxY: (canvas.height / 2 - pan.y) / zoom * 1e9,
+    minT: t0,
+    maxT: Infinity
+  }
+  let firstSegment = bbtree.queryFirst(displayBB)
+  if (!firstSegment) return
+
+  let showBBDebug = false
+  if (showBBDebug) {
+    ctx.lineWidth = 1
+    for (const layer of bbtree.layers) {
+      for (const bb of layer) {
+        // Red if the mouse is over it. |mouse| has the current mouse position in screen space.
+        const mouseWorldSpace = screenToWorldWithoutOrigin(mouse)
+        if (mouseWorldSpace.x >= bb.minX && mouseWorldSpace.x <= bb.maxX &&
+            mouseWorldSpace.y >= bb.minY && mouseWorldSpace.y <= bb.maxY)
+          ctx.strokeStyle = 'red'
+        else
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
+        ctx.strokeRect(
+          (bb.minX / 1e9) * zoom + pan.x + canvas.width / 2,
+          (bb.minY / 1e9) * zoom + pan.y + canvas.height / 2,
+          (bb.maxX - bb.minX) / 1e9 * zoom,
+          (bb.maxY - bb.minY) / 1e9 * zoom
+        )
+      }
+    }
+  }
+
   ctx.lineWidth = 2
 
   // Past
-  while (firstSegment && firstSegment.minT < currentTime) {
-    const t0 = firstSegment.minT
-    // Render until we're off the screen
-    ctx.save()
-    ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
-    ctx.scale(zoom/1e9, zoom/1e9)
-    ctx.beginPath()
-    let first = true
-    let more = false
-    for (const p of trajectoryPoints2(trajectory, t0, currentTime)) {
-      if (first) {
-        ctx.moveTo(p.x, p.y)
-        first = false
-      } else {
-        ctx.lineTo(p.x, p.y)
-      }
-      if (!bbContains(displayBB, p)) {
-        displayBB.minT = p.t
-        more = true
-        break
-      }
-    }
-    ctx.restore()
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
-    ctx.stroke()
-    if (!more) break;
-    firstSegment = bbtree.queryFirst(displayBB)
-  }
+  makeTrajectoryPath(ctx, trajectory, 0, currentTime)
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
+  ctx.stroke()
 
   // Future
-  while (firstSegment) {
-    const t0 = firstSegment.minT
-    // Render until we're off the screen
-    ctx.save()
-    ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
-    ctx.scale(zoom/1e9, zoom/1e9)
-    ctx.beginPath()
-    let first = true
-    let more = false
-    for (const p of trajectoryPoints2(trajectory, t0, trajectory.tMax)) {
-      if (first) {
-        ctx.moveTo(p.x, p.y)
-        first = false
-      } else {
-        ctx.lineTo(p.x, p.y)
-      }
-      if (!bbContains(displayBB, p)) {
-        displayBB.minT = p.t
-        more = true
-        break
-      }
-    }
-    ctx.restore()
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
-    ctx.stroke()
-    if (!more) break
-    firstSegment = bbtree.queryFirst(displayBB)
-  }
+  makeTrajectoryPath(ctx, trajectory, currentTime, trajectory.tMax)
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+  ctx.stroke()
 }
 
 function draw() {
