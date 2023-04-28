@@ -202,7 +202,11 @@ let currentTime = 0
 let trajectoryBBTrees = new WeakMap
 
 function simUntil(t) {
-  ephemeris.prolong(t + 14 * Day)
+  const tMax = ephemeris.tMax
+  if (t + 14 * Day > tMax) {
+    ephemeris.prolong(t + 14 * Day)
+    trajectoryBBTrees = new WeakMap
+  }
   vessels.forEach(v => {
     for (const m of v.maneuvers) {
       const lastSimulatedTime = v.trajectory.tMax
@@ -217,7 +221,6 @@ function simUntil(t) {
     ephemeris.flowWithAdaptiveStep(v.trajectory, ephemeris.tMax)
   })
   currentTime = t
-  trajectoryBBTrees = new WeakMap
 }
 
 /// UI STATE
@@ -724,6 +727,8 @@ function adjustManeuver() {
   currentManeuver.direction = newDirection
   maneuverVessel.trajectory.forgetAfter(currentManeuver.startTime)
   simUntil(currentTime)
+  trajectoryBBTrees.delete(maneuverVessel.trajectory)
+
   requestDraw()
   requestAnimationFrame(adjustManeuver)
 }
@@ -934,11 +939,11 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
           ctx.lineTo(p.x, p.y)
         }
         nPoints++
-      }
-      if (startedBeingOnScreen && !bbContains(displayBB, p)) {
-        displayBB.minT = p.t
-        more = true
-        break
+        if (!bbContains(displayBB, p)) {
+          displayBB.minT = p.t
+          more = true
+          break
+        }
       }
     }
     if (lastPoint)
@@ -1071,12 +1076,13 @@ function draw() {
   // Draw info
   ctx.fillStyle = 'white'
   //ctx.fillText("Total energy: " + totalEnergy(bodies).toExponential(4), 10, 20)
+  ctx.restore()
+
   const end = performance.now()
   const drawTime = end - start
   document.querySelector('#draw-time').textContent = drawTime.toFixed(2) + ' ms'
   document.querySelector('#zoom-level').textContent = zoom.toPrecision(2) + 'x'
   document.querySelector('#t').textContent = tMax
-  ctx.restore()
 }
 
 let raf = null
