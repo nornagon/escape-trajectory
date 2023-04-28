@@ -10,11 +10,26 @@ const vops = {
   add(a, b) {
     return { x: a.x + b.x, y: a.y + b.y }
   },
+  addi(a, b) {
+    a.x += b.x
+    a.y += b.y
+    return a;
+  },
   sub(a, b) {
     return { x: a.x - b.x, y: a.y - b.y }
   },
+  subi(a, b) {
+    a.x -= b.x
+    a.y -= b.y
+    return a;
+  },
   scale(a, s) {
     return { x: a.x * s, y: a.y * s }
+  },
+  scalei(a, s) {
+    a.x *= s
+    a.y *= s
+    return a;
   },
   norm(a) {
     return Math.hypot(a.x, a.y)
@@ -226,6 +241,9 @@ export class Trajectory {
     if (i === 0) {
       return this.#points[0].position
     }
+    if (i === this.#points.length) {
+      return this.#points[this.#points.length - 1].position
+    }
     // interpolate between |i - 1| and |i|
     const p0 = this.#points[i - 1]
     const p1 = this.#points[i]
@@ -233,7 +251,7 @@ export class Trajectory {
     const t1 = p1.time
     const q0 = p0.position
     const q1 = p1.position
-    return vops.add(q0, vops.scale(vops.sub(q1, q0), (t - t0) / (t1 - t0)))
+    return vops.addi(vops.scalei(vops.sub(q1, q0), (t - t0) / (t1 - t0)), q0)
   }
 
   /**
@@ -248,6 +266,9 @@ export class Trajectory {
     const i = lowerBound(this.#points, (p) => p.time < t)
     if (i === 0) {
       return this.#points[0].velocity
+    }
+    if (i === this.#points.length) {
+      return this.#points[this.#points.length - 1].velocity
     }
     // interpolate between |i - 1| and |i|
     const p0 = this.#points[i - 1]

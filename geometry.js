@@ -3,7 +3,7 @@
   from https://en.wikipedia.org/wiki/Cohen%E2%80%93Sutherland_algorithm
 */
 
-export function cohenSutherlandLineClip(xmin, xmax, ymin, ymax, x0, y0, x1, y1) {
+export function cohenSutherlandLineClip(xmin, xmax, ymin, ymax, p0, p1) {
   const INSIDE = 0 // 0000
   const LEFT = 1   // 0001
   const RIGHT = 2  // 0010
@@ -19,8 +19,8 @@ export function cohenSutherlandLineClip(xmin, xmax, ymin, ymax, x0, y0, x1, y1) 
     return code
   }
 
-  let outcode0 = computeOutCode(x0, y0)
-  let outcode1 = computeOutCode(x1, y1)
+  let outcode0 = computeOutCode(p0.x, p0.y)
+  let outcode1 = computeOutCode(p1.x, p1.y)
   let accept = false
 
   while (true) {
@@ -48,37 +48,31 @@ export function cohenSutherlandLineClip(xmin, xmax, ymin, ymax, x0, y0, x1, y1) 
       // No need to worry about divide-by-zero because, in each case, the
       // outcode bit being tested guarantees the denominator is non-zero
       if (outcodeOut & TOP) {           // point is above the clip window
-        x = x0 + (x1 - x0) * (ymax - y0) / (y1 - y0)
+        x = p0.x + (p1.x - p0.x) * (ymax - p0.y) / (p1.y - p0.y)
         y = ymax
       } else if (outcodeOut & BOTTOM) { // point is below the clip window
-        x = x0 + (x1 - x0) * (ymin - y0) / (y1 - y0)
+        x = p0.x + (p1.x - p0.x) * (ymin - p0.y) / (p1.y - p0.y)
         y = ymin
       } else if (outcodeOut & RIGHT) {  // point is to the right of clip window
-        y = y0 + (y1 - y0) * (xmax - x0) / (x1 - x0)
+        y = p0.y + (p1.y - p0.y) * (xmax - p0.x) / (p1.x - p0.x)
         x = xmax
       } else if (outcodeOut & LEFT) {   // point is to the left of clip window
-        y = y0 + (y1 - y0) * (xmin - x0) / (x1 - x0)
+        y = p0.y + (p1.y - p0.y) * (xmin - p0.x) / (p1.x - p0.x)
         x = xmin
       }
 
       // Now we move outside point to intersection point to clip
       // and get ready for next pass.
       if (outcodeOut === outcode0) {
-        x0 = x
-        y0 = y
-        outcode0 = computeOutCode(x0, y0)
+        p0.x = x
+        p0.y = y
+        outcode0 = computeOutCode(p0.x, p0.y)
       } else {
-        x1 = x
-        y1 = y
-        outcode1 = computeOutCode(x1, y1)
+        p1.x = x
+        p1.y = y
+        outcode1 = computeOutCode(p1.x, p1.y)
       }
     }
   }
   return accept
-}
-
-function intersectsLineAABB(aabb, p1, p2) {
-  // ignore aabb
-  // pass to cohenSutherlandLineClip
-  return cohenSutherlandLineClip(p1.x, p1.y, p2.x, p2.y)
 }

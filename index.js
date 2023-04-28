@@ -223,7 +223,7 @@ let trajectoryRBushes = new WeakMap
 let trajectoryBBTrees = new WeakMap
 
 function simUntil(t) {
-  ephemeris.prolong(t + 10 * Day)
+  ephemeris.prolong(t + 14 * Day)
   vessels.forEach(v => {
     for (const m of v.maneuvers) {
       const lastSimulatedTime = v.trajectory.tMax
@@ -268,7 +268,7 @@ canvas.width = window.innerWidth
 canvas.height = window.innerHeight - 200
 canvas.style.background = 'black'
 
-const ctx = canvas.getContext("2d")
+const ctx = canvas.getContext("2d", { alpha: false })
 
 function defaultWheelDelta(event) {
   return -event.deltaY * (event.deltaMode === 1 ? 0.05 : event.deltaMode ? 1 : 0.002) * (event.ctrlKey ? 10 : 1);
@@ -282,12 +282,14 @@ canvas.addEventListener("wheel", event => {
   const x = event.offsetX - canvas.width / 2 - pan.x
   const y = event.offsetY - canvas.height / 2 - pan.y
 
-  const k = Math.pow(2, wheelDelta)
+  let k = Math.pow(2, wheelDelta)
+  let oldZoom = zoom
+  zoom *= k
+  zoom = Math.min(zoom, 1e9)
+  k = zoom / oldZoom
 
   pan.x = event.offsetX - canvas.width / 2 - x * k
   pan.y = event.offsetY - canvas.height / 2 - y * k
-
-  zoom *= k
 
   requestDraw()
 })
@@ -531,10 +533,10 @@ function clipLine(p1, p2) {
   const { width, height } = canvas
   return cohenSutherlandLineClip(
     0, width, 0, height,
-    p1.x / 1e9 * zoom + width / 2 + pan.x,
-    p1.y / 1e9 * zoom + height / 2 + pan.y,
-    p2.x / 1e9 * zoom + width / 2 + pan.x,
-    p2.y / 1e9 * zoom + height / 2 + pan.y,
+    {x: p1.x / 1e9 * zoom + width / 2 + pan.x,
+    y: p1.y / 1e9 * zoom + height / 2 + pan.y,},
+    {x: p2.x / 1e9 * zoom + width / 2 + pan.x,
+    y: p2.y / 1e9 * zoom + height / 2 + pan.y,}
   )
 }
 
@@ -583,7 +585,21 @@ class BBTree {
     }
   }
 
-  queryFirst(bbTest) {
+  queryFirst(bbTest, layer = this.#layers.length - 1, i = 0, j = 1) {
+    for (; i < j && i < this.#layers[layer].length; i++) {
+      const bb = this.#layers[layer][i]
+      if (bbIntersects(bb, bbTest)) {
+        if (layer === 0) {
+          return bb
+        } else {
+          const bb = this.queryFirst(bbTest, layer - 1, i * 2, i * 2 + 2)
+          if (bb) return bb
+        }
+      }
+    }
+  }
+
+  queryFirst2(bbTest) {
     let layer = this.#layers.length - 1
     let i = 0
     let j = 1
@@ -594,10 +610,15 @@ class BBTree {
           return bb
         } else {
           i <<= 1
-          j <<= 1
+          j = i + 2
           layer--
         }
       } else {
+        if (i === j - 1 && layer < this.#layers.length - 1) {
+          i >>= 1
+          j = i + 2
+          layer++
+        }
         i++
       }
     }
@@ -619,6 +640,8 @@ function bbTreeForTrajectory(trajectory) {
         maxY: Math.max(aPos.y, bPos.y),
         minT: a.time,
         maxT: b.time,
+        a,
+        b,
       })
     }
   }
@@ -718,8 +741,8 @@ function* trajectoryPoints2(trajectory, t0, t1, opts = {}) {
         t = finalTime
         dt = t - previousTime
       }
-      const extrapolatedPosition = vadd(previousPosition, vscale(previousVelocity, dt))
       position = trajectoryPosInFrame(trajectory, t)
+      const extrapolatedPosition = vadd(previousPosition, vscale(previousVelocity, dt))
 
       // TODO: ??? is this right?
       estimatedError = Math.hypot(position.x - extrapolatedPosition.x, position.y - extrapolatedPosition.y)
@@ -943,7 +966,7 @@ function drawUI(ctx) {
   }
 }
 
-function makeTrajectoryPath(ctx, trajectory, t0, t1) {
+function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
   const bbtree = bbTreeForTrajectory(trajectory)
   const displayBB = {
     minX: (-canvas.width / 2 - pan.x) / zoom * 1e9,
@@ -965,31 +988,49 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1) {
   while (firstSegment) {
     nSegs++
     // Render until we're off the screen
-    let first = true
     let more = false
     let startedBeingOnScreen = false
     let nPoints = 0
-    for (const p of trajectoryPoints2(trajectory, firstSegment.minT, t1)) {
-      if (first) {
-        ctx.moveTo(p.x, p.y)
-        first = false
-      } else {
-        ctx.lineTo(p.x, p.y)
-        if (p.t >= firstSegment.maxT) {
-          startedBeingOnScreen = true
-        }
-        if (startedBeingOnScreen && !bbContains(displayBB, p)) {
-          displayBB.minT = p.t
-          more = true
-          break
-        }
-      }
-      nPoints++
+    let lastPoint = null
+    let nIterations = 0
+    const p0 = trajectoryPosInFrame(trajectory, firstSegment.minT)
+    const p1 = trajectoryPosInFrame(trajectory, firstSegment.maxT)
+    const p0_ = {...p0}
+    const p1_ = {...p1}
+    if (!cohenSutherlandLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, p0_, p1_)) {
+      // The segment doesn't actually intersect the screen
+      displayBB.minT = firstSegment.maxT + 0.001
+      firstSegment = bbtree.queryFirst(displayBB)
     }
-    console.log('rendered ' + nPoints + ' points')
+    const t = vlen(vsub(p0_, p0)) / vlen(vsub(p1, p0))
+    for (const p of trajectoryPoints2(trajectory, firstSegment.minT + t * (firstSegment.maxT - firstSegment.minT), t1)) {
+      nIterations++
+      if (!startedBeingOnScreen && (p.t >= firstSegment.maxT || bbContains(displayBB, p))) {
+        startedBeingOnScreen = true
+        if (!lastPoint) lastPoint = p
+        ctx.moveTo(lastPoint.x, lastPoint.y)
+      }
+      lastPoint = p
+      if (startedBeingOnScreen) {
+        if (drawPoints) {
+          ctx.moveTo(p.x, p.y)
+          ctx.arc(p.x, p.y, 2*1e9/zoom, 0, 2 * Math.PI)
+        } else {
+          ctx.lineTo(p.x, p.y)
+        }
+        nPoints++
+      }
+      if (startedBeingOnScreen && !bbContains(displayBB, p)) {
+        displayBB.minT = p.t
+        more = true
+        break
+      }
+    }
+    if (lastPoint)
+    console.log(`rendered ${nPoints} points of ${nIterations} iterations, which is ${((lastPoint.t - firstSegment.minT) / nPoints).toFixed(1)} seconds per point`)
     if (!more) break
     let nextSegment = bbtree.queryFirst(displayBB)
-    while (nextSegment && displayBB.minT > nextSegment.minT) {
+    while (nextSegment === firstSegment) {
       displayBB.minT = nextSegment.maxT + 0.0001
       nextSegment = bbtree.queryFirst(displayBB)
     }
@@ -1036,6 +1077,7 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
   let showBBDebug = false
   if (showBBDebug) {
     ctx.lineWidth = 1
+    let i = 0
     for (const layer of bbtree.layers) {
       for (const bb of layer) {
         // Red if the mouse is over it. |mouse| has the current mouse position in screen space.
@@ -1052,6 +1094,7 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
           (bb.maxY - bb.minY) / 1e9 * zoom
         )
       }
+      i++
     }
   }
 
@@ -1066,6 +1109,12 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
   makeTrajectoryPath(ctx, trajectory, currentTime, trajectory.tMax)
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
   ctx.stroke()
+
+  /*
+  makeTrajectoryPath(ctx, trajectory, currentTime, trajectory.tMax, true)
+  ctx.fillStyle = 'lightgreen'
+  ctx.fill()
+  */
 }
 
 function draw() {
@@ -1098,7 +1147,7 @@ function draw() {
     ctx.font = '12px sans-serif'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    ctx.fillText(body.name, 4 + screenPos.x, screenPos.y)
+    // ctx.fillText(body.name, 4 + screenPos.x, screenPos.y)
   }
   ctx.restore()
 
@@ -1129,7 +1178,7 @@ function draw() {
   const end = performance.now()
   const drawTime = end - start
   document.querySelector('#draw-time').textContent = drawTime.toFixed(2) + ' ms'
-  document.querySelector('#zoom-level').textContent = zoom.toFixed(2) + 'x'
+  document.querySelector('#zoom-level').textContent = zoom.toPrecision(2) + 'x'
   document.querySelector('#t').textContent = tMax
   ctx.restore()
 }
