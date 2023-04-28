@@ -1,25 +1,5 @@
 import { Ephemeris, Trajectory } from "./ephemeris.js"
 import { cohenSutherlandLineClip } from "./geometry.js"
-import RBush from 'https://cdn.skypack.dev/rbush'
-
-class TwoPointRBush extends RBush {
-  toBBox([a, b]) {
-    return {
-      minX: Math.min(a.x, b.x),
-      minY: Math.min(a.y, b.y),
-      maxX: Math.max(a.x, b.x),
-      maxY: Math.max(a.y, b.y),
-    }
-  }
-
-  compareMinX(a, b) {
-    return Math.min(a[0].x, a[1].x) - Math.min(b[0].x, b[1].x)
-  }
-
-  compareMinY(a, b) {
-    return Math.min(a[0].y, a[1].y) - Math.min(b[0].y, b[1].y)
-  }
-}
 
 // Format the given duration as Wd Xh Ym Zs, where W=days, X=hours, Y=minutes, Z=seconds
 // If days is 0, omit it. If hours is 0, omit it. If minutes is 0, omit it.
@@ -219,7 +199,6 @@ window.ephemeris = ephemeris
 
 let currentTime = 0
 
-let trajectoryRBushes = new WeakMap
 let trajectoryBBTrees = new WeakMap
 
 function simUntil(t) {
@@ -238,7 +217,6 @@ function simUntil(t) {
     ephemeris.flowWithAdaptiveStep(v.trajectory, ephemeris.tMax)
   })
   currentTime = t
-  trajectoryRBushes = new WeakMap
   trajectoryBBTrees = new WeakMap
 }
 
@@ -646,20 +624,6 @@ function bbTreeForTrajectory(trajectory) {
     }
   }
   return bbtree
-}
-
-function rbushForTrajectory(trajectory) {
-  let rbush = trajectoryRBushes.get(trajectory)
-  if (!rbush) {
-    rbush = new TwoPointRBush
-    trajectoryRBushes.set(trajectory, rbush)
-    for (const [a, b] of trajectory.segments()) {
-      const aPos = trajectoryPosInFrame(trajectory, a.time)
-      const bPos = trajectoryPosInFrame(trajectory, b.time)
-      rbush.insert([aPos, bPos])
-    }
-  }
-  return rbush
 }
 
 function trajectoryPosInFrame(trajectory, t) {
