@@ -421,6 +421,7 @@ canvas.addEventListener("mousedown", event => {
         const r = Math.sqrt(dx * dx + dy * dy)
         if (r < Math.max(10, zoom / 1e9 * ephemeris.bodies[i].radius)) {
           originBodyIndex = i
+          trajectoryBBTrees = new WeakMap
           pan.x = 0
           pan.y = 0
 
