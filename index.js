@@ -1043,7 +1043,7 @@ function draw() {
     ctx.font = '12px sans-serif'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    // ctx.fillText(body.name, 4 + screenPos.x, screenPos.y)
+    ctx.fillText(body.name, 4 + screenPos.x, screenPos.y)
   }
   ctx.restore()
 
