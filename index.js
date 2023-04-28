@@ -791,13 +791,13 @@ function drawUI(ctx) {
     ctx.beginPath()
     ctx.moveTo(screenPos.x + prograde.x * 10, screenPos.y + prograde.y * 10)
     ctx.lineTo(
-      screenPos.x + prograde.x * progradeLen,
-      screenPos.y + prograde.y * progradeLen
+      screenPos.x + prograde.x * (progradeLen - 15),
+      screenPos.y + prograde.y * (progradeLen - 15)
     )
     ctx.moveTo(screenPos.x + -prograde.x * 10, screenPos.y + -prograde.y * 10)
     ctx.lineTo(
-      screenPos.x + -prograde.x * retrogradeLen,
-      screenPos.y + -prograde.y * retrogradeLen
+      screenPos.x + -prograde.x * (retrogradeLen - 15),
+      screenPos.y + -prograde.y * (retrogradeLen - 15)
     )
     ctx.moveTo(screenPos.x + radial.x * 10, screenPos.y + radial.y * 10)
     ctx.lineTo(
@@ -811,28 +811,80 @@ function drawUI(ctx) {
     )
     ctx.stroke()
 
-    ctx.fillStyle = '#0f0'
+    ctx.strokeStyle = 'chartreuse'
+    ctx.fillStyle = 'chartreuse'
+    {
+      const center = vadd(screenPos, vscale(prograde, progradeLen))
+
+      ctx.beginPath()
+      ctx.arc(center.x, center.y, 10, 0, 2 * Math.PI)
+      ctx.moveTo(center.x, center.y - 10)
+      ctx.lineTo(center.x, center.y - 20)
+      ctx.moveTo(center.x - 10, center.y)
+      ctx.lineTo(center.x - 20, center.y)
+      ctx.moveTo(center.x + 10, center.y)
+      ctx.lineTo(center.x + 20, center.y)
+      ctx.stroke()
+
+      ctx.on?.('mousedown', () => {
+        draggingTrajectory = true;
+        draggingTrajectoryLen = 80
+        draggingTrajectoryDir = { prograde: 1, radial: 0 }
+        adjustManeuver()
+      })
+
+      ctx.beginPath()
+      ctx.arc(center.x, center.y, 2, 0, 2 * Math.PI)
+      ctx.fill()
+    }
+
+    {
+      const center = vadd(screenPos, vscale(prograde, -retrogradeLen))
+
+      ctx.beginPath()
+      ctx.arc(center.x, center.y, 10, 0, 2 * Math.PI)
+      ctx.moveTo(center.x, center.y - 10)
+      ctx.lineTo(center.x, center.y - 20)
+      {
+        const aDir = {
+          x: Math.cos(Math.PI * 1/3 + Math.PI/2),
+          y: Math.sin(Math.PI * 1/3 + Math.PI/2)
+        }
+        ctx.moveTo(center.x + aDir.x * 10, center.y + aDir.y * 10)
+        ctx.lineTo(center.x + aDir.x * 20, center.y + aDir.y * 20)
+      }
+      {
+        const bDir = {
+          x: Math.cos(-Math.PI * 1/3 + Math.PI/2),
+          y: Math.sin(-Math.PI * 1/3 + Math.PI/2)
+        }
+        ctx.moveTo(center.x + bDir.x * 10, center.y + bDir.y * 10)
+        ctx.lineTo(center.x + bDir.x * 20, center.y + bDir.y * 20)
+      }
+      ctx.stroke()
+
+      ctx.on?.('mousedown', () => {
+        draggingTrajectory = true;
+        draggingTrajectoryLen = 80
+        draggingTrajectoryDir = { prograde: -1, radial: 0 }
+        adjustManeuver()
+      })
+
+      ctx.lineWidth = 1
+      const dir = {
+        x: Math.cos(Math.PI / 4),
+        y: Math.sin(Math.PI / 4)
+      }
+      ctx.beginPath()
+      ctx.moveTo(center.x - dir.x * 10, center.y - dir.y * 10)
+      ctx.lineTo(center.x + dir.x * 10, center.y + dir.y * 10)
+      ctx.moveTo(center.x - dir.x * 10, center.y + dir.y * 10)
+      ctx.lineTo(center.x + dir.x * 10, center.y - dir.y * 10)
+      ctx.stroke()
+    }
+
+    ctx.lineWidth = 2
     ctx.strokeStyle = 'black'
-    polygon(ctx, vadd(screenPos, vscale(prograde, progradeLen)), 3, 10, -Math.PI / 2)
-    ctx.stroke()
-    ctx.fill()
-    ctx.on?.('mousedown', () => {
-      draggingTrajectory = true;
-      draggingTrajectoryLen = 80
-      draggingTrajectoryDir = { prograde: 1, radial: 0 }
-      adjustManeuver()
-    })
-
-    polygon(ctx, vadd(screenPos, vscale(prograde, -retrogradeLen)), 3, 10, Math.PI / 2)
-    ctx.stroke()
-    ctx.fill()
-    ctx.on?.('mousedown', () => {
-      draggingTrajectory = true;
-      draggingTrajectoryLen = 80
-      draggingTrajectoryDir = { prograde: -1, radial: 0 }
-      adjustManeuver()
-    })
-
     ctx.fillStyle = '#00d7d6'
     polygon(ctx, vadd(screenPos, vscale(radial, radialLen)), 4, 10, Math.PI / 2)
     ctx.stroke()
