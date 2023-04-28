@@ -1001,11 +1001,12 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
       // The segment doesn't actually intersect the screen
       displayBB.minT = firstSegment.maxT + 0.001
       firstSegment = bbtree.queryFirst(displayBB)
+      continue
     }
     const t = vlen(vsub(p0_, p0)) / vlen(vsub(p1, p0))
     for (const p of trajectoryPoints2(trajectory, firstSegment.minT + t * (firstSegment.maxT - firstSegment.minT), t1)) {
       nIterations++
-      if (!startedBeingOnScreen && (p.t >= firstSegment.maxT || bbContains(displayBB, p))) {
+      if (!startedBeingOnScreen && (p.t >= firstSegment.maxT || (lastPoint && cohenSutherlandLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, {...lastPoint}, {...p})) || bbContains(displayBB, p))) {
         startedBeingOnScreen = true
         if (!lastPoint) lastPoint = p
         ctx.moveTo(lastPoint.x, lastPoint.y)
@@ -1030,7 +1031,7 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
     console.log(`rendered ${nPoints} points of ${nIterations} iterations, which is ${((lastPoint.t - firstSegment.minT) / nPoints).toFixed(1)} seconds per point`)
     if (!more) break
     let nextSegment = bbtree.queryFirst(displayBB)
-    while (nextSegment === firstSegment) {
+    while (nextSegment && nextSegment.minT < displayBB.minT) {
       displayBB.minT = nextSegment.maxT + 0.0001
       nextSegment = bbtree.queryFirst(displayBB)
     }
@@ -1099,6 +1100,7 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
   }
 
   ctx.lineWidth = 2
+  ctx.lineJoin = 'round'
 
   // Past
   makeTrajectoryPath(ctx, trajectory, 0, currentTime)
