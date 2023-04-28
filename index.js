@@ -519,13 +519,6 @@ function clipLine(p1, p2) {
   )
 }
 
-function clipPoint(p) {
-  const { width, height } = canvas
-  const sx = p.x / 1e9 * zoom + width / 2 + pan.x
-  const sy = p.y / 1e9 * zoom + height / 2 + pan.y
-  return sx >= 0 && sx < width && sy >= 0 && sy < height
-}
-
 function bbIntersects(bb1, bb2) {
   return bb1.minX <= bb2.maxX && bb1.maxX >= bb2.minX && bb1.minY <= bb2.maxY && bb1.maxY >= bb2.minY && bb1.minT <= bb2.maxT && bb1.maxT >= bb2.minT
 }
@@ -540,6 +533,8 @@ class BBTree {
   }
   get layers() { return this.#layers }
   insert(bb) {
+    if (this.#layers[0].length && bb.minT !== this.#layers[0][this.#layers[0].length - 1].maxT)
+      throw new Error("BBTree: inserted bounding boxes must be in order of increasing time")
     let i = this.length
     let j = i << 1
     let layer = 0
@@ -564,41 +559,23 @@ class BBTree {
     }
   }
 
-  queryFirst(bbTest, layer = this.#layers.length - 1, i = 0, j = 1) {
+  /**
+   * @param {{minX: number, maxX: number, minY: number, maxY: number, minT: number, maxT: number}} bbTest The bounding box to test against.
+   * @returns {{minX: number, maxX: number, minY: number, maxY: number, minT: number, maxT: number}} The first bounding box that intersects with `bbTest`, or `undefined` if none do.
+   */
+  queryFirst(bbTest) {
+    return this.#queryFirstHelper(bbTest)
+  }
+  #queryFirstHelper(bbTest, layer = this.#layers.length - 1, i = 0, j = 1) {
     for (; i < j && i < this.#layers[layer].length; i++) {
       const bb = this.#layers[layer][i]
       if (bbIntersects(bb, bbTest)) {
         if (layer === 0) {
           return bb
         } else {
-          const bb = this.queryFirst(bbTest, layer - 1, i * 2, i * 2 + 2)
+          const bb = this.#queryFirstHelper(bbTest, layer - 1, i * 2, i * 2 + 2)
           if (bb) return bb
         }
-      }
-    }
-  }
-
-  queryFirst2(bbTest) {
-    let layer = this.#layers.length - 1
-    let i = 0
-    let j = 1
-    while (layer >= 0 && i < j && i < this.#layers[layer].length) {
-      const bb = this.#layers[layer][i]
-      if (bbIntersects(bb, bbTest)) {
-        if (layer === 0) {
-          return bb
-        } else {
-          i <<= 1
-          j = i + 2
-          layer--
-        }
-      } else {
-        if (i === j - 1 && layer < this.#layers.length - 1) {
-          i >>= 1
-          j = i + 2
-          layer++
-        }
-        i++
       }
     }
   }
@@ -651,35 +628,7 @@ function trajectoryVelocityInFrame(trajectory, t) {
   }
 }
 
-function* trajectorySegment(trajectory, t0, t1) {
-  const minSubdivisionDistance = 1e9/zoom * 2
-
-  const p0 = trajectoryPosInFrame(trajectory, t0)
-  const p1 = trajectoryPosInFrame(trajectory, t1)
-
-  if (clipLine(p0, p1) && Math.hypot(p1.x - p0.x, p1.y - p0.y) > minSubdivisionDistance && t1 - t0 >= ephemeris.step) {
-    const tMid = (t0 + t1) / 2
-    yield* trajectorySegment(trajectory, t0, tMid)
-    yield* trajectorySegment(trajectory, tMid, t1)
-  } else {
-    yield p0
-  }
-}
-
-function* trajectoryPoints(trajectory, t0, t1) {
-  // Get the velocity at t0, use that to set the step.
-  const v0 = trajectory.evaluateVelocity(t0)
-  const s = vlen(v0)
-  // |s| is in m/s, so we want to step by 1e9/zoom pixels.
-  const step = Math.max(s === 0 ? 100 * 60 * 8 : 1000e9/zoom / s, ephemeris.step / 16)
-  for (let t = t0; t < t1; t += step) {
-    yield* trajectorySegment(trajectory, t, Math.min(t + step, t1))
-  }
-
-  yield trajectoryPosInFrame(trajectory, t1)
-}
-
-function* trajectoryPoints2(trajectory, t0, t1, opts = {}) {
+function* trajectoryPoints(trajectory, t0, t1, opts = {}) {
   if (t1 === t0) return
   const { maxPoints = Infinity, resolution = 2e9/zoom } = opts
   const finalTime = t1
@@ -969,7 +918,7 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
       continue
     }
     const t = vlen(vsub(p0_, p0)) / vlen(vsub(p1, p0))
-    for (const p of trajectoryPoints2(trajectory, firstSegment.minT + t * (firstSegment.maxT - firstSegment.minT), t1)) {
+    for (const p of trajectoryPoints(trajectory, firstSegment.minT + t * (firstSegment.maxT - firstSegment.minT), t1)) {
       nIterations++
       if (!startedBeingOnScreen && (p.t >= firstSegment.maxT || (lastPoint && cohenSutherlandLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, {...lastPoint}, {...p})) || bbContains(displayBB, p))) {
         startedBeingOnScreen = true
@@ -1008,26 +957,6 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
 }
 
 function drawTrajectory(ctx, trajectory, t0 = 0) {
-  /*
-  let first = true
-  ctx.save()
-  ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
-  ctx.scale(zoom/1e9, zoom/1e9)
-  ctx.beginPath()
-  for (const [a,b] of trajectory.segments()) {
-    const p = trajectoryPosInFrame(trajectory, a.time)
-    if (first) {
-      ctx.moveTo(p.x, p.y)
-      first = false
-    }
-    else ctx.lineTo(p.x, p.y)
-  }
-  ctx.restore()
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
-  ctx.lineWidth = 2
-  ctx.stroke()
-  */
-
   const bbtree = bbTreeForTrajectory(trajectory)
   const displayBB = {
     minX: (-canvas.width / 2 - pan.x) / zoom * 1e9,
