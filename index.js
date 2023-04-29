@@ -296,7 +296,7 @@ function closestPointOnSegment(p1, p2, s) {
 
 function findNearestTrajectory(screenPos) {
   const {x, y} = screenPos
-  let closestP = 0
+  let closestP = null
   let closestD = Infinity
   let closestI = -1
   vessels.forEach((vessel, i) => {
@@ -314,6 +314,11 @@ function findNearestTrajectory(screenPos) {
           closestD = d
           closestP = p
           closestI = i
+        } else if (closestD < 10 && d > 10) {
+          // If we've already found a point within 10px, and this point is more
+          // than 10px away, stop searching. This lets us find the earliest
+          // trajectory that's within 10px of the cursor.
+          break
         }
       }
     }
