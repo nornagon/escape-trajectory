@@ -86,13 +86,11 @@ class Maneuver {
   #duration
   #initialMass
   #direction
-  #initialDirection
 
   constructor({ startTime, duration, direction, initialMass }) {
     this.#startTime = startTime
     this.#duration = duration
     this.#direction = vnormalize(direction)
-    this.#initialDirection = this.#direction
     this.#initialMass = initialMass
   }
 
@@ -101,7 +99,6 @@ class Maneuver {
   set duration(d) { this.#duration = d }
   get direction() { return this.#direction }
   set direction(d) { this.#direction = vnormalize(d) }
-  get initialDirection() { return this.#initialDirection }
   get endTime() { return this.#startTime + this.#duration }
 
   inertialIntrinsicAcceleration(t) {
@@ -203,8 +200,9 @@ let trajectoryBBTrees = new WeakMap
 
 function simUntil(t) {
   const tMax = ephemeris.tMax
-  if (t + 14 * Day > tMax) {
-    ephemeris.prolong(t + 14 * Day)
+  const newTMax = t + 14 * Hour
+  if (newTMax > tMax) {
+    ephemeris.prolong(newTMax)
     trajectoryBBTrees = new WeakMap
   }
   vessels.forEach(v => {
@@ -714,7 +712,7 @@ function adjustManeuver() {
   const delta = (draggingManeuverLen - 80) / 70
   const dDuration = delta >= 0 ? Math.pow(delta, 2) : -Math.pow(-delta, 2)
 
-  const prograde = currentManeuver.initialDirection
+  const prograde = vnormalize(vsub(maneuverVessel.trajectory.evaluateVelocity(currentManeuver.startTime), ephemeris.trajectories[originBodyIndex].evaluateVelocity(currentManeuver.startTime)))
   const radial = vperp(prograde)
   const durationChangeDir = vadd(
     vscale(prograde, draggingManeuver.prograde),
@@ -765,8 +763,15 @@ function drawUI(ctx) {
       } else {
         ctx.fillStyle = 'lightblue'
         ctx.fill()
-        ctx.on?.('mousedown', () => {
-          selectManeuver(vessel, maneuver)
+        ctx.on?.('mousedown', (e) => {
+          if (e.button === 0)
+            selectManeuver(vessel, maneuver)
+          if (e.button === 2) {
+            vessel.removeManeuver(maneuver)
+            vessel.trajectory.forgetAfter(maneuver.startTime)
+            simUntil(currentTime)
+            trajectoryBBTrees.delete(maneuverVessel.trajectory)
+          }
         })
       }
     }
@@ -797,7 +802,7 @@ function drawUI(ctx) {
       ctx.fillText('T–' + formatDuration(currentManeuver.startTime - currentTime), screenPos.x, screenPos.y + 20)
     }
 
-    const prograde = currentManeuver.initialDirection
+    const prograde = vnormalize(vsub(maneuverVessel.trajectory.evaluateVelocity(currentManeuver.startTime), ephemeris.trajectories[originBodyIndex].evaluateVelocity(currentManeuver.startTime)))
     const radial = vperp(prograde)
     const progradeLen = draggingManeuver?.prograde === 1 ? draggingManeuverLen : 80
     const retrogradeLen = draggingManeuver?.prograde === -1 ? draggingManeuverLen : 80
@@ -921,7 +926,7 @@ function drawUI(ctx) {
       ctx.beginPath()
       ctx.rect(0, 0, canvas.width, canvas.height)
       ctx.on?.('mousemove', (e) => {
-        const prograde = currentManeuver.initialDirection
+        const prograde = vnormalize(vsub(maneuverVessel.trajectory.evaluateVelocity(currentManeuver.startTime), ephemeris.trajectories[originBodyIndex].evaluateVelocity(currentManeuver.startTime)))
         const radial = vperp(prograde)
         const vec = vadd(
           vscale(prograde, draggingManeuver.prograde),
