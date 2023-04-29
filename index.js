@@ -442,14 +442,10 @@ canvas.addEventListener("mousedown", event => {
       if (point) {
         const vessel = vessels[point.i]
         const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
-        currentManeuver = vessel.addManeuver(point.t, 0, vsub(vessel.trajectory.evaluateVelocity(point.t), originBodyTrajectory.evaluateVelocity(point.t)))
-        maneuverVessel = vessel
+        const m = vessel.addManeuver(point.t, 0, vsub(vessel.trajectory.evaluateVelocity(point.t), originBodyTrajectory.evaluateVelocity(point.t)))
+        selectManeuver(vessel, m)
       } else {
-        if (currentManeuver?.duration === 0) {
-          maneuverVessel.removeManeuver(currentManeuver)
-        }
-        currentManeuver = null
-        maneuverVessel = null
+        selectManeuver(null, null)
       }
       requestDraw()
     }
@@ -738,6 +734,14 @@ function adjustManeuver() {
   requestAnimationFrame(adjustManeuver)
 }
 
+function selectManeuver(vessel, maneuver) {
+  if (currentManeuver?.duration === 0) {
+    maneuverVessel.removeManeuver(currentManeuver)
+  }
+  currentManeuver = maneuver
+  maneuverVessel = vessel
+}
+
 /**
  * @param {CanvasRenderingContext2D} ctx
  */
@@ -758,9 +762,8 @@ function drawUI(ctx) {
       } else {
         ctx.fillStyle = 'lightblue'
         ctx.fill()
-        ctx.on?.('mousedown', (e) => {
-          currentManeuver = maneuver
-          maneuverVessel = vessel
+        ctx.on?.('mousedown', () => {
+          selectManeuver(vessel, maneuver)
         })
       }
     }
