@@ -991,8 +991,6 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
   if (!firstSegment) return
 
   ctx.save()
-  ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y)
-  ctx.scale(zoom/1e9, zoom/1e9)
   ctx.beginPath()
   console.group('trajectory')
   let nSegs = 0
@@ -1020,15 +1018,15 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
       if (!startedBeingOnScreen && (p.t >= firstSegment.maxT || (lastPoint && cohenSutherlandLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, {...lastPoint}, {...p})) || bbContains(displayBB, p))) {
         startedBeingOnScreen = true
         if (!lastPoint) lastPoint = p
-        ctx.moveTo(lastPoint.x, lastPoint.y)
+        ctx.moveTo(lastPoint.x * zoom/1e9 + canvas.width / 2 + pan.x, lastPoint.y * zoom/1e9 + canvas.height / 2 + pan.y)
       }
       lastPoint = p
       if (startedBeingOnScreen) {
         if (drawPoints) {
-          ctx.moveTo(p.x, p.y)
-          ctx.arc(p.x, p.y, 2*1e9/zoom, 0, 2 * Math.PI)
+          ctx.moveTo(p.x * zoom/1e9 + canvas.width / 2 + pan.x, p.y * zoom/1e9 + canvas.height / 2 + pan.y)
+          ctx.arc(p.x * zoom/1e9 + canvas.width / 2 + pan.x, p.y * zoom/1e9 + canvas.height / 2 + pan.y, 2, 0, 2 * Math.PI)
         } else {
-          ctx.lineTo(p.x, p.y)
+          ctx.lineTo(p.x * zoom/1e9 + canvas.width / 2 + pan.x, p.y * zoom/1e9 + canvas.height / 2 + pan.y)
         }
         nPoints++
         if (!bbContains(displayBB, p)) {
@@ -1069,7 +1067,6 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
   let showBBDebug = false
   if (showBBDebug) {
     ctx.lineWidth = 1
-    let i = 0
     for (const layer of bbtree.layers) {
       for (const bb of layer) {
         // Red if the mouse is over it. |mouse| has the current mouse position in screen space.
