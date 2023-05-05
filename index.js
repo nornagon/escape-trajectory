@@ -1,5 +1,17 @@
 import { Ephemeris, Trajectory } from "./ephemeris.js"
-import { cohenSutherlandLineClip } from "./geometry.js"
+import { bbContains, closestTOnSegment, cohenSutherlandLineClip } from "./geometry.js"
+import { InteractionContext2D, polygon } from "./canvas-util.js"
+import { BBTree, vops, lerp } from "./geometry.js"
+const {
+  add: vadd,
+  sub: vsub,
+  scale: vscale,
+  perp: vperp,
+  normalize: vnormalize,
+  lerp: vlerp,
+  len: vlen,
+  dot: vdot,
+} = vops
 
 // Format the given duration as Wd Xh Ym Zs, where W=days, X=hours, Y=minutes, Z=seconds
 // If days is 0, omit it. If hours is 0, omit it. If minutes is 0, omit it.
@@ -50,24 +62,6 @@ const celestials = [
   { name: "Ceres", mass: 9.393e20, position: {x: 4.14e11, y: 0}, velocity: {x: 0, y: 17.9e3}, radius: 469.73e3, color: "#f0f" },
 ]
 
-const vadd = (a, b) => ({x: a.x + b.x, y: a.y + b.y})
-const vsub = (a, b) => ({x: a.x - b.x, y: a.y - b.y})
-const vscale = (v, s) => ({x: v.x * s, y: v.y * s})
-const vdot = (a, b) => a.x * b.x + a.y * b.y
-const vneg = v => ({x: -v.x, y: -v.y})
-const vlen = v => Math.hypot(v.x, v.y)
-const vnormalize = v => vscale(v, 1 / vlen(v))
-const vperp = v => ({x: -v.y, y: v.x})
-const vrotate = (v, a) => ({
-  x: v.x * Math.cos(a) - v.y * Math.sin(a),
-  y: v.x * Math.sin(a) + v.y * Math.cos(a),
-})
-const vproject = (a, b) => vscale(b, vdot(a, b) / vlen(b))
-function vlerp(p1, p2, t) {
-  if (t === 0) return p1
-  if (t === 1) return p2
-  return {x: lerp(p1.x, p2.x, t), y: lerp(p1.y, p2.y, t)}
-}
 const earth = celestials.find(c => c.name === 'Earth')
 const G = 6.67408e-11
 function orbitalVelocity(m1, m2, r) {
@@ -215,7 +209,7 @@ let trajectoryBBTrees = new WeakMap
 
 function simUntil(t) {
   const tMax = ephemeris.tMax
-  const newTMax = t + 14 * Day
+  const newTMax = t + 14 * Hour
   if (newTMax > tMax) {
     ephemeris.prolong(newTMax)
     trajectoryBBTrees = new WeakMap
@@ -288,25 +282,6 @@ canvas.addEventListener("wheel", event => {
   requestDraw()
 })
 
-// Find the closest point on a segment to a given point
-function closestTOnSegment(p1, p2, {x: x0, y: y0}) {
-  const {x: x1, y: y1} = p1
-  const {x: x2, y: y2} = p2
-  const dx = x2 - x1
-  const dy = y2 - y1
-  const d2 = dx * dx + dy * dy
-  if (d2 === 0)
-    return 0
-  const t = ((x0 - x1) * dx + (y0 - y1) * dy) / d2
-  return Math.max(0, Math.min(1, t))
-}
-function lerp(a, b, t) {
-  return a + (b - a) * t
-}
-function closestPointOnSegment(p1, p2, s) {
-  return vlerp(p1, p2, closestTOnSegment(p1, p2, s))
-}
-
 function findNearestTrajectory(screenPos) {
   const {x, y} = screenPos
   let closestP = null
@@ -341,69 +316,6 @@ function findNearestTrajectory(screenPos) {
       i: closestI,
       t: closestP.t,
     }
-}
-
-class InteractionContext2D {
-  #paths = []
-  #currentPath = null
-  #ctx
-
-  constructor(ctx) {
-    this.#ctx = ctx
-  }
-
-  beginPath() {
-    this.#currentPath = new Path2D()
-    this.#paths.push(this.#currentPath)
-  }
-
-  moveTo(x, y) {
-    this.#currentPath.moveTo(x, y)
-  }
-
-  lineTo(x, y) {
-    this.#currentPath.lineTo(x, y)
-  }
-
-  rect(x, y, w, h) {
-    this.#currentPath.rect(x, y, w, h)
-  }
-
-  arc(x, y, r, a0, a1) {
-    this.#currentPath.arc(x, y, r, a0, a1)
-  }
-
-  stroke() {}
-
-  fill() {}
-
-  fillText() {}
-
-  closePath() {
-    this.#currentPath.closePath()
-  }
-
-  set fillStyle(style) {
-  }
-
-  set strokeStyle(style) {
-  }
-
-  set lineWidth(width) {
-  }
-
-  on(event, handler) {
-    this.#currentPath[event] = handler
-  }
-
-  getPathForPoint({x, y}) {
-    // Go backwards through the paths so we hit the topmost one first.
-    for (let i = this.#paths.length - 1; i >= 0; i--) {
-      const path = this.#paths[i]
-      if (this.#ctx.isPointInPath(path, x, y))
-        return path
-    }
-  }
 }
 
 canvas.addEventListener("contextmenu", event => {
@@ -445,6 +357,9 @@ canvas.addEventListener("mousedown", event => {
         const r = Math.hypot(dx, dy)
         if (r < Math.max(10, zoom / 1e9 * ephemeris.bodies[i].radius)) {
           selectedBodyIndex = i
+          if (event.detail === 2) {
+            setOriginBody(i)
+          }
           return
         }
       }
@@ -519,79 +434,6 @@ function screenToWorldWithoutOrigin(pos) {
   return {
     x: (pos.x - canvas.width / 2 - pan.x) * 1e9 / zoom,
     y: (pos.y - canvas.height / 2 - pan.y) * 1e9 / zoom,
-  }
-}
-
-function clipLine(p1, p2) {
-  const { width, height } = canvas
-  return cohenSutherlandLineClip(
-    0, width, 0, height,
-    {x: p1.x / 1e9 * zoom + width / 2 + pan.x,
-    y: p1.y / 1e9 * zoom + height / 2 + pan.y,},
-    {x: p2.x / 1e9 * zoom + width / 2 + pan.x,
-    y: p2.y / 1e9 * zoom + height / 2 + pan.y,}
-  )
-}
-
-function bbIntersects(bb1, bb2) {
-  return bb1.minX <= bb2.maxX && bb1.maxX >= bb2.minX && bb1.minY <= bb2.maxY && bb1.maxY >= bb2.minY && bb1.minT <= bb2.maxT && bb1.maxT >= bb2.minT
-}
-function bbContains(bb1, p) {
-  return p.x >= bb1.minX && p.x <= bb1.maxX && p.y >= bb1.minY && p.y <= bb1.maxY && p.t >= bb1.minT && p.t <= bb1.maxT
-}
-
-class BBTree {
-  #layers = [[]]
-  get length() {
-    return this.#layers[0].length
-  }
-  get layers() { return this.#layers }
-  insert(bb) {
-    if (this.#layers[0].length && bb.minT !== this.#layers[0][this.#layers[0].length - 1].maxT)
-      throw new Error("BBTree: inserted bounding boxes must be in order of increasing time")
-    let i = this.length
-    let j = i << 1
-    let layer = 0
-    do {
-      if (!this.#layers[layer])
-        this.#layers[layer] = [this.#layers[layer - 1][i >> 1]]
-      this.#layers[layer][i] = this.#merge(this.#layers[layer][i], bb)
-      i >>= 1
-      j >>= 1
-      layer++
-    } while (j)
-  }
-  #merge(a, b) {
-    if (!a) return b
-    return {
-      minX: Math.min(a.minX, b.minX),
-      minY: Math.min(a.minY, b.minY),
-      maxX: Math.max(a.maxX, b.maxX),
-      maxY: Math.max(a.maxY, b.maxY),
-      minT: Math.min(a.minT, b.minT),
-      maxT: Math.max(a.maxT, b.maxT),
-    }
-  }
-
-  /**
-   * @param {{minX: number, maxX: number, minY: number, maxY: number, minT: number, maxT: number}} bbTest The bounding box to test against.
-   * @returns {{minX: number, maxX: number, minY: number, maxY: number, minT: number, maxT: number}} The first bounding box that intersects with `bbTest`, or `undefined` if none do.
-   */
-  queryFirst(bbTest) {
-    return this.#queryFirstHelper(bbTest)
-  }
-  #queryFirstHelper(bbTest, layer = this.#layers.length - 1, i = 0, j = 1) {
-    for (; i < j && i < this.#layers[layer].length; i++) {
-      const bb = this.#layers[layer][i]
-      if (bbIntersects(bb, bbTest)) {
-        if (layer === 0) {
-          return bb
-        } else {
-          const bb = this.#queryFirstHelper(bbTest, layer - 1, i * 2, i * 2 + 2)
-          if (bb) return bb
-        }
-      }
-    }
   }
 }
 
@@ -683,33 +525,6 @@ function* trajectoryPoints(trajectory, t0, t1, opts = {}) {
     yield position
     pointsAdded++
   }
-}
-
-function polyline(ctx, generator) {
-  let first = true
-  let n = 0
-  for (const p of generator) {
-    if (first) {
-      ctx.moveTo(p.x, p.y)
-      first = false
-    } else {
-      ctx.lineTo(p.x, p.y)
-    }
-    n++
-  }
-  console.log(`polyline: ${n} points`)
-}
-
-function polygon(ctx, c, n, r, startAngle = 0) {
-  ctx.beginPath()
-  for (let i = 0; i < n; i++) {
-    const angle = i * 2 * Math.PI / n + startAngle
-    if (i === 0)
-      ctx.moveTo(c.x + r * Math.cos(angle), c.y + r * Math.sin(angle))
-    else
-      ctx.lineTo(c.x + r * Math.cos(angle), c.y + r * Math.sin(angle))
-  }
-  ctx.closePath()
 }
 
 function adjustManeuver() {
@@ -1106,7 +921,6 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
           (bb.maxY - bb.minY) / 1e9 * zoom
         )
       }
-      i++
     }
   }
 

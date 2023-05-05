@@ -5,40 +5,7 @@
 import { DormandالمكاوىPrince1986RKN434FM, ODEState, solveEmbeddedExplicitRungeKuttaNyström } from "./integrators.js"
 import { newhallApproximationInMonomialBasis } from "./newhall.js"
 
-/** @type { import("./types").Ops<Vec2> } */
-const vops = {
-  add(a, b) {
-    return { x: a.x + b.x, y: a.y + b.y }
-  },
-  addi(a, b) {
-    a.x += b.x
-    a.y += b.y
-    return a;
-  },
-  sub(a, b) {
-    return { x: a.x - b.x, y: a.y - b.y }
-  },
-  subi(a, b) {
-    a.x -= b.x
-    a.y -= b.y
-    return a;
-  },
-  scale(a, s) {
-    return { x: a.x * s, y: a.y * s }
-  },
-  scalei(a, s) {
-    a.x *= s
-    a.y *= s
-    return a;
-  },
-  norm(a) {
-    return Math.hypot(a.x, a.y)
-  },
-  norm2(a) {
-    return a.x * a.x + a.y * a.y
-  },
-  get zero() { return { x: 0, y: 0 } },
-}
+import { vops } from "./geometry.js"
 
 const G = 6.67408e-11
 
