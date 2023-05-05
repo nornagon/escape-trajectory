@@ -2,6 +2,8 @@ import { Ephemeris, Trajectory } from "./ephemeris.js"
 import { bbContains, closestTOnSegment, cohenSutherlandLineClip } from "./geometry.js"
 import { InteractionContext2D, polygon } from "./canvas-util.js"
 import { BBTree, vops, lerp } from "./geometry.js"
+import { html, render } from 'https://esm.sh/htm/preact/standalone'
+import { BodyDetails } from "./body-ui.js"
 const {
   add: vadd,
   sub: vsub,
@@ -371,6 +373,7 @@ canvas.addEventListener("mousedown", event => {
         selectManeuver(vessel, m)
       } else {
         selectManeuver(null, null)
+        selectedBodyIndex = null
       }
       requestDraw()
     }
@@ -992,7 +995,7 @@ function draw() {
     if (selectedBodyIndex === i) {
       ctx.fillStyle = 'white'
     } else {
-      ctx.fillStyle = 'lightgray'
+      ctx.fillStyle = 'gray'
     }
     ctx.font = '12px Martian Mono'
     ctx.textAlign = 'left'
@@ -1021,6 +1024,11 @@ function draw() {
   ctx.save()
   drawUI(ctx)
   ctx.restore()
+
+  if (selectedBodyIndex != null)
+    render(BodyDetails({body: ephemeris.bodies[selectedBodyIndex]}), document.querySelector('#overlay'))
+  else
+    render(null, document.querySelector('#overlay'))
 
   const end = performance.now()
   const drawTime = end - start
