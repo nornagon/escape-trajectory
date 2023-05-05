@@ -27,10 +27,10 @@ const celestials = [
 
   { name: "Moon", mass: 7.34767309e22, position: {x: 1.496e11 + 3.844e8, y: 0}, velocity: {x: 0, y: 29.78e3 + 1022}, radius: 1737.4e3, color: "#ccc" },
 
-  { name: "Mars", mass: 6.4171e23, position: {x: 2.2794e11, y: 0}, velocity: {x: 0, y: 24.077e3}, radius: 3389.5e3, color: "#f00" },
+  { name: "Mars", mass: 6.4171e23, position: {x: 2.2794e11, y: 0}, velocity: {x: 0, y: 24.077e3}, radius: 3389.5e3, color: "#ce8258" },
 
-    { name: "Phobos", mass: 1.0659e16, position: {x: 2.2794e11 + 9.376e6, y: 0}, velocity: {x: 0, y: 24.077e3 + 2.138e3}, radius: 11.2667e3, color: "#f00" },
-    { name: "Deimos", mass: 1.4762e15, position: {x: 2.2794e11 + 2.326e7, y: 0}, velocity: {x: 0, y: 24.077e3 + 1.351e3}, radius: 6.2e3, color: "#f00" },
+    { name: "Phobos", mass: 1.0659e16, position: {x: 2.2794e11 + 9.376e6, y: 0}, velocity: {x: 0, y: 24.077e3 + 2.138e3}, radius: 11.2667e3, color: "#967a6e" },
+    { name: "Deimos", mass: 1.4762e15, position: {x: 2.2794e11 + 2.326e7, y: 0}, velocity: {x: 0, y: 24.077e3 + 1.351e3}, radius: 6.2e3, color: "#d7bb9a" },
 
   { name: "Jupiter", mass: 1.8986e27, position: {x: 7.7857e11, y: 0}, velocity: {x: 0, y: 13.07e3}, radius: 69911e3, color: "#f0f" },
 
@@ -1130,8 +1130,23 @@ function draw() {
     const pos = trajectory.evaluatePosition(currentTime)
     const screenPos = worldToScreen(pos)
     ctx.beginPath()
-    ctx.arc(screenPos.x, screenPos.y, Math.max(2, body.radius / 1e9 * zoom), 0, 2 * Math.PI)
+    const r = Math.max(2, body.radius / 1e9 * zoom)
+    ctx.arc(screenPos.x, screenPos.y, r, 0, 2 * Math.PI)
     ctx.fill()
+
+    if (r > 2) {
+      const sunPos = ephemeris.trajectories[0].evaluatePosition(currentTime)
+      const sunScreenPos = worldToScreen(sunPos)
+      const toSunNorm = vnormalize(vsub(sunScreenPos, pos))
+      const offset = vadd(screenPos, vscale(toSunNorm, r * 0.1))
+      ctx.save()
+      ctx.clip()
+      ctx.beginPath()
+      ctx.arc(offset.x, offset.y, r, 0, 2 * Math.PI)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+      ctx.fill()
+      ctx.restore()
+    }
 
     ctx.fillStyle = 'white'
     ctx.font = '12px sans-serif'
