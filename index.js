@@ -987,7 +987,7 @@ function drawUI(ctx) {
 
     const bodyRadius = body.radius / 1e9 * zoom
     // Draw a diamond around the body
-    const diamondRadius = Math.max(10, bodyRadius * Math.SQRT2 * 1.5)
+    const diamondRadius = 10
     ctx.beginPath()
     ctx.moveTo(bodyScreenPos.x, bodyScreenPos.y - diamondRadius)
     ctx.lineTo(bodyScreenPos.x + diamondRadius, bodyScreenPos.y)
@@ -1172,7 +1172,7 @@ function draw() {
     }
 
     const metrics = ctx.measureText(body.name)
-    const diamondRadius = Math.max(10, body.radius / 1e9 * zoom * Math.SQRT2 * 1.5)
+    const diamondRadius = 10
     ctx.fillStyle = 'black'
     ctx.fillRect(screenPos.x + diamondRadius + 5, screenPos.y - metrics.actualBoundingBoxAscent - 2, metrics.width + 10, metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent + 4)
     if (selectedBodyIndex === i) {
