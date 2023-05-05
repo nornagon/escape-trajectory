@@ -4,6 +4,7 @@ import { InteractionContext2D, polygon } from "./canvas-util.js"
 import { BBTree, vops, lerp } from "./geometry.js"
 import { html, render } from 'https://esm.sh/htm/preact/standalone'
 import { BodyDetails } from "./body-ui.js"
+import { formatDuration } from "./util.js"
 const {
   add: vadd,
   sub: vsub,
@@ -14,21 +15,6 @@ const {
   len: vlen,
   dot: vdot,
 } = vops
-
-// Format the given duration as Wd Xh Ym Zs, where W=days, X=hours, Y=minutes, Z=seconds
-// If days is 0, omit it. If hours is 0, omit it. If minutes is 0, omit it.
-function formatDuration(seconds) {
-  let days = Math.floor(seconds / 86400)
-  let hours = Math.floor((seconds % 86400) / 3600)
-  let minutes = Math.floor((seconds % 3600) / 60)
-  let seconds2 = Math.floor(seconds % 60)
-  let result = ""
-  if (days > 0) result += `${days}d `
-  if (hours > 0) result += `${hours}h `
-  if (minutes > 0) result += `${minutes}m `
-  result += `${seconds2}s`
-  return result
-}
 
 const celestials = [
   { name: "Sun", mass: 1.98855e30, position: {x: 0, y: 0}, velocity: {x: 0, y: 0}, radius: 695700e3, color: "#ff0" },
@@ -63,6 +49,22 @@ const celestials = [
 
   { name: "Ceres", mass: 9.393e20, position: {x: 4.14e11, y: 0}, velocity: {x: 0, y: 17.9e3}, radius: 469.73e3, color: "#f0f" },
 ]
+
+const initialSites = {
+  Earth: [
+    {
+      name: "KSC",
+      facilities: [
+        {
+          type: "manufactory",
+        }
+      ]
+    },
+  ],
+}
+for (const celestial of celestials) {
+  celestial.sites = initialSites[celestial.name] || []
+}
 
 const earth = celestials.find(c => c.name === 'Earth')
 const G = 6.67408e-11
@@ -1026,7 +1028,7 @@ function draw() {
   ctx.restore()
 
   if (selectedBodyIndex != null)
-    render(BodyDetails({body: ephemeris.bodies[selectedBodyIndex]}), document.querySelector('#overlay'))
+    render(html`<${BodyDetails} body=${ephemeris.bodies[selectedBodyIndex]} />`, document.querySelector('#overlay'))
   else
     render(null, document.querySelector('#overlay'))
 
