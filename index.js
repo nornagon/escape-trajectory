@@ -244,6 +244,7 @@ let pan = {x: 0, y: 0}
 let zoom = 38e3
 
 let originBodyIndex = 3
+let selectedBodyIndex = 3
 
 let trajectoryHoverPoint = null
 let currentManeuver = null
@@ -415,8 +416,7 @@ canvas.addEventListener("mousedown", event => {
   const interactions = new InteractionContext2D(ctx)
   drawUI(interactions)
   const path = interactions.getPathForPoint({x: event.offsetX, y: event.offsetY})
-  path?.mousedown?.(event)
-  if (path) return
+  if (path?.mousedown) return path.mousedown(event)
 
   const x0 = event.offsetX - canvas.width / 2 - pan.x
   const y0 = event.offsetY - canvas.height / 2 - pan.y
@@ -442,14 +442,9 @@ canvas.addEventListener("mousedown", event => {
 
         const dx = screenPos.x - event.offsetX
         const dy = screenPos.y - event.offsetY
-        const r = Math.sqrt(dx * dx + dy * dy)
+        const r = Math.hypot(dx, dy)
         if (r < Math.max(10, zoom / 1e9 * ephemeris.bodies[i].radius)) {
-          originBodyIndex = i
-          trajectoryBBTrees = new WeakMap
-          pan.x = 0
-          pan.y = 0
-
-          requestDraw()
+          selectedBodyIndex = i
           return
         }
       }
@@ -759,6 +754,15 @@ function selectManeuver(vessel, maneuver) {
   maneuverVessel = vessel
 }
 
+function setOriginBody(i) {
+  originBodyIndex = i
+  trajectoryBBTrees = new WeakMap
+  pan.x = 0
+  pan.y = 0
+
+  requestDraw()
+}
+
 /**
  * @param {CanvasRenderingContext2D} ctx
  */
@@ -818,7 +822,7 @@ function drawUI(ctx) {
       ctx.fillStyle = 'white'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
-      ctx.font = '18px sans-serif'
+      ctx.font = '18px Martian Mono'
       ctx.fillText('T–' + formatDuration(currentManeuver.startTime - currentTime), screenPos.x, screenPos.y + 20)
     }
 
@@ -975,6 +979,25 @@ function drawUI(ctx) {
     ctx.arc(screenPos.x, screenPos.y, 5, 0, 2 * Math.PI)
     ctx.fill()
   }
+
+  if (selectedBodyIndex != null) {
+    const body = ephemeris.bodies[selectedBodyIndex]
+    const trajectory = ephemeris.trajectories[selectedBodyIndex]
+    const bodyScreenPos = worldToScreen(trajectory.evaluatePosition(currentTime))
+
+    const bodyRadius = body.radius / 1e9 * zoom
+    // Draw a diamond around the body
+    const diamondRadius = Math.max(10, bodyRadius * Math.SQRT2 * 1.5)
+    ctx.beginPath()
+    ctx.moveTo(bodyScreenPos.x, bodyScreenPos.y - diamondRadius)
+    ctx.lineTo(bodyScreenPos.x + diamondRadius, bodyScreenPos.y)
+    ctx.lineTo(bodyScreenPos.x, bodyScreenPos.y + diamondRadius)
+    ctx.lineTo(bodyScreenPos.x - diamondRadius, bodyScreenPos.y)
+    ctx.closePath()
+    ctx.strokeStyle = 'rgba(255, 255, 255, 1)'
+    ctx.lineWidth = 3
+    ctx.stroke()
+  }
 }
 
 function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
@@ -1013,7 +1036,7 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
       continue
     }
     const t = vlen(vsub(p0_, p0)) / vlen(vsub(p1, p0))
-    for (const p of trajectoryPoints(trajectory, firstSegment.minT + t * (firstSegment.maxT - firstSegment.minT), t1)) {
+    for (const p of trajectoryPoints(trajectory, Math.max(t0, Math.min(firstSegment.minT + t * (firstSegment.maxT - firstSegment.minT), t1)), t1)) {
       nIterations++
       if (!startedBeingOnScreen && (p.t >= firstSegment.maxT || (lastPoint && cohenSutherlandLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, {...lastPoint}, {...p})) || bbContains(displayBB, p))) {
         startedBeingOnScreen = true
@@ -1037,7 +1060,7 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
       }
     }
     if (lastPoint)
-    console.log(`rendered ${nPoints} points of ${nIterations} iterations, which is ${((lastPoint.t - firstSegment.minT) / nPoints).toFixed(1)} seconds per point`)
+      console.log(`rendered ${nPoints} points of ${nIterations} iterations, which is ${((lastPoint.t - firstSegment.minT) / nPoints).toFixed(1)} seconds per point`)
     if (!more) break
     let nextSegment = bbtree.queryFirst(displayBB)
     while (nextSegment && nextSegment.minT < displayBB.minT) {
@@ -1123,7 +1146,7 @@ function draw() {
   }
 
   // Draw bodies
-  for (let i = 0; i < ephemeris.bodies.length; i++) {
+  for (let i = ephemeris.bodies.length - 1; i >= 0; i--) {
     const body = ephemeris.bodies[i]
     const trajectory = ephemeris.trajectories[i]
     ctx.fillStyle = body.color
@@ -1148,11 +1171,19 @@ function draw() {
       ctx.restore()
     }
 
-    ctx.fillStyle = 'white'
-    ctx.font = '12px sans-serif'
+    const metrics = ctx.measureText(body.name)
+    const diamondRadius = Math.max(10, body.radius / 1e9 * zoom * Math.SQRT2 * 1.5)
+    ctx.fillStyle = 'black'
+    ctx.fillRect(screenPos.x + diamondRadius + 5, screenPos.y - metrics.actualBoundingBoxAscent - 2, metrics.width + 10, metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent + 4)
+    if (selectedBodyIndex === i) {
+      ctx.fillStyle = 'white'
+    } else {
+      ctx.fillStyle = 'lightgray'
+    }
+    ctx.font = '12px Martian Mono'
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    ctx.fillText(body.name, 4 + screenPos.x, screenPos.y)
+    ctx.fillText(body.name, screenPos.x + diamondRadius + 10, screenPos.y)
   }
   ctx.restore()
 
@@ -1172,14 +1203,9 @@ function draw() {
   }
 
   ctx.restore()
-  ctx.save()
-  drawUI(ctx)
-  ctx.restore()
 
   ctx.save()
-  // Draw info
-  ctx.fillStyle = 'white'
-  //ctx.fillText("Total energy: " + totalEnergy(bodies).toExponential(4), 10, 20)
+  drawUI(ctx)
   ctx.restore()
 
   const end = performance.now()
