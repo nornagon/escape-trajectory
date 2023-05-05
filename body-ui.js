@@ -1,4 +1,4 @@
-import { html } from 'https://esm.sh/htm/preact/standalone'
+import { html } from 'preact/standalone'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`

@@ -2,7 +2,7 @@ import { Ephemeris, Trajectory } from "./ephemeris.js"
 import { bbContains, closestTOnSegment, cohenSutherlandLineClip } from "./geometry.js"
 import { InteractionContext2D, polygon } from "./canvas-util.js"
 import { BBTree, vops, lerp } from "./geometry.js"
-import { html, render } from 'https://esm.sh/htm/preact/standalone'
+import { html, render } from 'preact/standalone'
 import { BodyDetails } from "./body-ui.js"
 import { formatDuration } from "./util.js"
 const {
