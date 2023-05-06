@@ -2,9 +2,11 @@ import { Ephemeris, Trajectory } from "./ephemeris.js"
 import { bbContains, closestTOnSegment, cohenSutherlandLineClip } from "./geometry.js"
 import { InteractionContext2D, polygon } from "./canvas-util.js"
 import { BBTree, vops, lerp } from "./geometry.js"
-import { html, render } from 'preact/standalone'
-import { BodyDetails } from "./body-ui.js"
+import { html } from 'htm/preact'
+import { render } from 'preact'
 import { formatDuration } from "./util.js"
+import { OverlayUI } from "./overlay-ui.js"
+import { uiState } from "./ui-store.js"
 const {
   add: vadd,
   sub: vsub,
@@ -235,7 +237,6 @@ function simUntil(t) {
 }
 
 /// UI STATE
-
 let mouse = {x: 0, y: 0}
 
 let pan = {x: 0, y: 0}
@@ -243,6 +244,7 @@ let zoom = 38e3
 
 let originBodyIndex = 3
 let selectedBodyIndex = 3
+uiState.selectedBody.value = ephemeris.bodies[selectedBodyIndex]
 
 let trajectoryHoverPoint = null
 let currentManeuver = null
@@ -361,6 +363,7 @@ canvas.addEventListener("mousedown", event => {
         const r = Math.hypot(dx, dy)
         if (r < Math.max(10, zoom / 1e9 * ephemeris.bodies[i].radius)) {
           selectedBodyIndex = i
+          uiState.selectedBody.value = ephemeris.bodies[i]
           if (event.detail === 2) {
             setOriginBody(i)
           }
@@ -376,6 +379,7 @@ canvas.addEventListener("mousedown", event => {
       } else {
         selectManeuver(null, null)
         selectedBodyIndex = null
+        uiState.selectedBody.value = null
       }
       requestDraw()
     }
@@ -1027,11 +1031,6 @@ function draw() {
   drawUI(ctx)
   ctx.restore()
 
-  if (selectedBodyIndex != null)
-    render(html`<${BodyDetails} body=${ephemeris.bodies[selectedBodyIndex]} />`, document.querySelector('#overlay'))
-  else
-    render(null, document.querySelector('#overlay'))
-
   const end = performance.now()
   const drawTime = end - start
   document.querySelector('#draw-time').textContent = drawTime.toFixed(2) + ' ms'
@@ -1091,3 +1090,4 @@ document.querySelector("#stop").onclick = () => {
 }
 
 draw()
+render(html`<${OverlayUI} />`, document.querySelector('#overlay'))

@@ -1,4 +1,5 @@
-import { html } from 'preact/standalone'
+import { html } from 'htm/preact'
+import { uiState } from './ui-store.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -89,7 +90,7 @@ function Facility({facility}) {
     <div class="body-details__facility">
       <div class="body-details__facility-type">${facility.type}</div>
       <div class="body-details__facility-actions">
-        <button class="body-details__facility-action">Build</button>
+        <button class="body-details__facility-action" onclick=${() => uiState.overlay.value = { type: "build-vessel", facility }}>Build</button>
       </div>
     </div>
   `
