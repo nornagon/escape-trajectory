@@ -32,18 +32,22 @@ class ColdGasNozzle extends Engine {
   static description = "Blowing pressurized gas through a nozzle produces thrust.  Inefficient but very simple and cheap."
 
   static parameters = {
+    // Parameters with a min/max will be displayed as a slider.
     thrust: {
       min: 10e3,
       max: 200e3,
     },
+    // Otherwise they will be displayed as a read-only value.
     isp: {},
     mass: {},
     cost: {},
   }
 
+  // Editable values are stored as properties on the object. These are the defaults.
   thrust = 100e3
   isp = 30
 
+  // Computed values are defined as getters.
   get mass() {
     return this.thrust / 2e3
   }
