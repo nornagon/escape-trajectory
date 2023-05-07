@@ -1,7 +1,7 @@
 import { html } from 'htm/preact'
 import { useState } from 'preact/hooks'
 import { uiState } from './ui-store.js'
-import { components } from './components.js'
+import { components, instantiateComponent } from './components.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -99,27 +99,25 @@ styles.replaceSync(`
 }
 
 .vessel-module__parameters {
-  display: flex;
-  flex-direction: column;
+  display: table;
 }
 
 .vessel-module__parameter {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
+  display: table-row;
 }
 
 .vessel-module__parameter-name {
-  margin-right: 8px;
+  padding-right: 8px;
+  display: table-cell;
 }
 
 .vessel-module__parameter-value {
-  flex-grow: 1;
+  display: table-cell;
 }
 
 .vessel-module__parameter-value input {
-  width: 100%;
+  width: 300px;
+  margin-right: 8px;
 }
 
 input[type=range] {
@@ -143,35 +141,50 @@ input[type="range"]::-webkit-slider-thumb {
   margin-top: -7px;
   background-color: #96F9FF;
   border-radius: 50%;
-  border: 2px solid #172d29;
+  border: 3px solid #172d29;
 }
 `)
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles]
 
-function LibraryModule({module, onAddModule}) {
+function splice(arr, i, item) {
+  const a = [...arr]
+  a.splice(i, 1, item)
+  return a
+}
+
+function LibraryModule({module, onAdd}) {
   return html`
     <div class="library-module">
       <div class="library-module__title">
         ${module.name}
-        <button onclick=${onAddModule}>+</button>
+        <button onclick=${onAdd}>+</button>
       </div>
       <div class="library-module__description">${module.description}</div>
     </div>
   `
 }
 
-function VesselModule({module}) {
+function VesselModule({module, onUpdate}) {
   return html`
     <div class="vessel-module">
       <div class="vessel-module__title">
-        ${module.name}
+        ${module.component.name}
       </div>
       <div class="vessel-module__parameters">
-        ${module.parameters.map(param => html`
+        ${module.component.parameters.map((param, i) => html`
           <div class="vessel-module__parameter">
             <div class="vessel-module__parameter-name">${param.name}</div>
             <div class="vessel-module__parameter-value">
-              <input type="range" min=${param.min} max=${param.max} value=${param.default} />
+              <input type="range" min=${param.min} max=${param.max} value=${module.parameterValues[i]} oninput=${(e) => {onUpdate({...module, parameterValues: splice(module.parameterValues, i, parseFloat(e.target.value))})}} />
+              ${module.parameterValues[i]} ${param.units}
+            </div>
+          </div>
+        `)}
+        ${module.component.derivedParameters.map((param, i) => html`
+          <div class="vessel-module__parameter">
+            <div class="vessel-module__parameter-name">${param.name}</div>
+            <div class="vessel-module__parameter-value">
+              ${param.format.format(param.value(module.parameterValues))}
             </div>
           </div>
         `)}
@@ -190,10 +203,10 @@ export function BuildVessel() {
       </div>
       <div class="build-vessel__content">
         <div class="build-vessel__library">
-          ${components.map(module => html`<${LibraryModule} module=${module} onAddModule=${() => setModules((m) => [...m, Object.create(module)])} />`)}
+          ${components.map(module => html`<${LibraryModule} module=${module} onAdd=${() => setModules((m) => [...m, instantiateComponent(module)])} />`)}
         </div>
         <div class="build-vessel__modules">
-          ${modules.map(module => html`<${VesselModule} module=${module} />`)}
+          ${modules.map((module, i) => html`<${VesselModule} module=${module} onUpdate=${(newM) => setModules((m) => splice(m, i, newM))} />`)}
         </div>
         <div class="build-vessel__summary">
         </div>

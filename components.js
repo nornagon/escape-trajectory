@@ -45,6 +45,10 @@ class APCPRocket extends SolidThruster {
   }
 }
 
+const currency = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, minimumFractionDigits: 0, style: 'currency', currency: 'USD', style: 'currency' })
+const mass = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, minimumFractionDigits: 0, style: 'unit', unit: 'kilogram', style: 'unit' })
+const isp = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, minimumFractionDigits: 0, style: 'unit', unit: 'second', style: 'unit' })
+
 export const components = [
   {
     type: "engine",
@@ -53,12 +57,38 @@ export const components = [
     parameters: [
       {
         name: "Thrust",
-        type: "number",
         units: "kN",
         default: 100.0,
         min: 10.0,
         max: 200.0,
       },
+    ],
+    derivedParameters: [
+      {
+        name: "Isp",
+        units: "s",
+        format: isp,
+        value: () => 30,
+      },
+      {
+        name: "Mass",
+        units: "kg",
+        format: mass,
+        value: ([thrust]) => thrust / 2.0,
+      },
+      {
+        name: "Cost",
+        units: "$",
+        format: currency,
+        value: ([thrust]) => 10 * thrust ** 0.99 * ({isp: 30}).isp ** 1.1,
+      },
     ]
   }
 ]
+
+export function instantiateComponent(component) {
+  return {
+    component,
+    parameterValues: component.parameters.map(param => param.default),
+  }
+}
