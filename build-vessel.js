@@ -1,7 +1,7 @@
 import { html } from 'htm/preact'
 import { useState } from 'preact/hooks'
 import { uiState } from './ui-store.js'
-import { components, instantiateComponent } from './components.js'
+import { componentTypes, parameterDisplay } from './components.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -96,6 +96,9 @@ styles.replaceSync(`
   margin: 0;
   padding: 0;
   color: #96F9FF;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
 }
 
 .vessel-module__parameters {
@@ -143,12 +146,60 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
   border: 3px solid #172d29;
 }
+
+.build-vessel__summary {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.build-vessel__summary__title {
+  font-weight: bold;
+  margin: 0;
+  padding: 0;
+  color: #96F9FF;
+}
+
+.build-vessel__summary__content {
+  margin-top: 8px;
+  flex: 1;
+}
+
+.build-vessel__summary__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.build-vessel__summary__action {
+  padding: 2px;
+  border: 1px solid #96F9FF;
+}
+
+.build-vessel__summary__action button {
+  width: 100%;
+  line-height: 2em;
+  background: #96F9FF;
+  border: none;
+  color: #172d29;
+  font-family: inherit;
+  text-transform: uppercase;
+  letter-spacing: 1em;
+  padding-left: calc(1em + 6px);
+  cursor: pointer;
+}
+
+.build-vessel__summary__action button:hover {
+  background: #3E9D98;
+  color: #172d29;
+}
 `)
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles]
 
-function splice(arr, i, item) {
+function splice(arr, ...args) {
   const a = [...arr]
-  a.splice(i, 1, item)
+  a.splice(...args)
   return a
 }
 
@@ -164,30 +215,41 @@ function LibraryModule({module, onAdd}) {
   `
 }
 
-function VesselModule({module, onUpdate}) {
+function VesselModule({module, onUpdate, onRemove}) {
   return html`
     <div class="vessel-module">
       <div class="vessel-module__title">
-        ${module.component.name}
+        ${module.name}
+        <button onclick=${onRemove}>–</button>
       </div>
       <div class="vessel-module__parameters">
-        ${module.component.parameters.map((param, i) => html`
-          <div class="vessel-module__parameter">
-            <div class="vessel-module__parameter-name">${param.name}</div>
-            <div class="vessel-module__parameter-value">
-              <input type="range" min=${param.min} max=${param.max} value=${module.parameterValues[i]} oninput=${(e) => {onUpdate({...module, parameterValues: splice(module.parameterValues, i, parseFloat(e.target.value))})}} />
-              ${module.parameterValues[i]} ${param.units}
-            </div>
-          </div>
-        `)}
-        ${module.component.derivedParameters.map((param, i) => html`
-          <div class="vessel-module__parameter">
-            <div class="vessel-module__parameter-name">${param.name}</div>
-            <div class="vessel-module__parameter-value">
-              ${param.format.format(param.value(module.parameterValues))}
-            </div>
-          </div>
-        `)}
+        ${Object.entries(module.constructor.parameters).map(([key, param]) => {
+          const display = parameterDisplay[key]
+          if (param.min && param.max) {
+            return html`
+              <div class="vessel-module__parameter">
+                <div class="vessel-module__parameter-name">${display.name}</div>
+                <div class="vessel-module__parameter-value">
+                  <input type="range" min=${param.min} max=${param.max} value=${module[key]} oninput=${(e) => {
+                    if (e.target.value === module[key]) return
+                    module[key] = Number(e.target.value)
+                    onUpdate()
+                  }} />
+                  ${display.format(module[key])}
+                </div>
+              </div>
+            `
+          } else {
+            return html`
+              <div class="vessel-module__parameter">
+                <div class="vessel-module__parameter-name">${display.name}</div>
+                <div class="vessel-module__parameter-value">
+                  ${display.format(module[key])}
+                </div>
+              </div>
+            `
+          }
+        })}
       </div>
     </div>
   `
@@ -195,20 +257,36 @@ function VesselModule({module, onUpdate}) {
 
 export function BuildVessel() {
   const [modules, setModules] = useState([])
+  const totalMass = modules.reduce((sum, m) => sum + m.mass, 0)
+  const totalCost = modules.reduce((sum, m) => sum + m.cost, 0)
   return html`
     <div class="build-vessel">
       <div class="build-vessel__title">
         VESSEL PLAN
-        <button onClick=${() => uiState.overlay.value = null}>X</button>
+        <button onClick=${() => uiState.overlay.value = null}>×</button>
       </div>
       <div class="build-vessel__content">
         <div class="build-vessel__library">
-          ${components.map(module => html`<${LibraryModule} module=${module} onAdd=${() => setModules((m) => [...m, instantiateComponent(module)])} />`)}
+          ${componentTypes.map(module => html`<${LibraryModule} module=${module} onAdd=${() => setModules((m) => [...m, new module])} />`)}
         </div>
         <div class="build-vessel__modules">
-          ${modules.map((module, i) => html`<${VesselModule} module=${module} onUpdate=${(newM) => setModules((m) => splice(m, i, newM))} />`)}
+          ${modules.map((module, i) => html`<${VesselModule} module=${module} onUpdate=${() => setModules(m => [...m] /* force update ... hm :/ */)} onRemove=${() => setModules((m) => splice(m, i, 1))} />`)}
         </div>
         <div class="build-vessel__summary">
+          <div class="build-vessel__summary__title">TOTAL</div>
+          <div class="build-vessel__summary__content">
+            <div class="build-vessel__summary__row">
+              <div class="build-vessel__summary__label">Mass</div>
+              <div class="build-vessel__summary__value">${parameterDisplay.mass.format(totalMass)}</div>
+            </div>
+            <div class="build-vessel__summary__row">
+              <div class="build-vessel__summary__label">Cost</div>
+              <div class="build-vessel__summary__value">${parameterDisplay.cost.format(totalCost)}</div>
+            </div>
+          </div>
+          <div class="build-vessel__summary__action">
+            <button>BUILD</button>
+          </div>
         </div>
       </div>
     </div>
