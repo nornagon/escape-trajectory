@@ -1,7 +1,7 @@
 import { html } from 'htm/preact'
 import { useState } from 'preact/hooks'
 import { uiState } from './ui-store.js'
-import { componentTypes, parameterDisplay } from './components.js'
+import { moduleTypes, parameterDisplay } from './modules.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -203,14 +203,14 @@ function splice(arr, ...args) {
   return a
 }
 
-function LibraryModule({module, onAdd}) {
+function LibraryModuleType({moduleType, onAdd}) {
   return html`
     <div class="library-module">
       <div class="library-module__title">
-        ${module.name}
+        ${moduleType.name}
         <button onclick=${onAdd}>+</button>
       </div>
-      <div class="library-module__description">${module.description}</div>
+      <div class="library-module__description">${moduleType.description}</div>
     </div>
   `
 }
@@ -267,10 +267,17 @@ export function BuildVessel() {
       </div>
       <div class="build-vessel__content">
         <div class="build-vessel__library">
-          ${componentTypes.map(module => html`<${LibraryModule} module=${module} onAdd=${() => setModules((m) => [...m, new module])} />`)}
+          ${moduleTypes.map(moduleType => html`
+            <${LibraryModuleType}
+              moduleType=${moduleType}
+              onAdd=${() => setModules((m) => [...m, new moduleType])} />`)}
         </div>
         <div class="build-vessel__modules">
-          ${modules.map((module, i) => html`<${VesselModule} module=${module} onUpdate=${() => setModules(m => [...m] /* force update ... hm :/ */)} onRemove=${() => setModules((m) => splice(m, i, 1))} />`)}
+          ${modules.map((module, i) => html`
+            <${VesselModule}
+              module=${module}
+              onUpdate=${() => setModules(m => [...m] /* force update ... hm :/ */)}
+              onRemove=${() => setModules((m) => splice(m, i, 1))} />`)}
         </div>
         <div class="build-vessel__summary">
           <div class="build-vessel__summary__title">TOTAL</div>

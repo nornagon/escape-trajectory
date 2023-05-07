@@ -82,7 +82,7 @@ class Methalox extends Engine {
   }
 }
 
-export const componentTypes = [
+export const moduleTypes = [
   ColdGasNozzle,
   Methalox,
 ]
