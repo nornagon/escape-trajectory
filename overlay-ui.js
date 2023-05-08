@@ -8,7 +8,7 @@ export function OverlayUI() {
     return html`<${BuildVessel} ...${uiState.overlay.value} />`
   }
   if (uiState.selectedBody.value) {
-    return html`<${BodyDetails} body=${uiState.selectedBody.value} />`
+    return html`<${BodyDetails} bodyId=${uiState.selectedBody.value} />`
   }
   return null
 }

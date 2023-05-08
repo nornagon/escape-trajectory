@@ -6,7 +6,7 @@ import { render } from 'preact'
 import { formatDuration } from "./util.js"
 import { OverlayUI } from "./overlay-ui.js"
 import { uiState } from "./ui-store.js"
-import { universe } from "./universe-state.js"
+import { universe, onUniverseChanged } from "./universe-state.js"
 const { ephemeris, vessels } = universe
 const {
   add: vadd,
@@ -19,36 +19,7 @@ const {
   dot: vdot,
 } = vops
 
-const Second = 1
-const Minute = 60 * Second
-const Hour = 60 * Minute
-const Day = 24 * Hour
-const Month = 30 * Day
-
 let trajectoryBBTrees = new WeakMap
-
-function simUntil(t) {
-  const tMax = ephemeris.tMax
-  const newTMax = t + 14 * Hour
-  if (newTMax > tMax) {
-    ephemeris.prolong(newTMax)
-    trajectoryBBTrees = new WeakMap
-  }
-  vessels.forEach(v => {
-    for (const m of v.maneuvers) {
-      const lastSimulatedTime = v.trajectory.tMax
-      if (m.startTime < lastSimulatedTime)
-        continue
-      // Coast until maneuver start
-      ephemeris.flowWithAdaptiveStep(v.trajectory, m.startTime)
-      // Burn until maneuver end
-      ephemeris.flowWithAdaptiveStep(v.trajectory, m.endTime, v.intrinsicAcceleration.bind(v))
-    }
-    // Coast until tMax
-    ephemeris.flowWithAdaptiveStep(v.trajectory, ephemeris.tMax)
-  })
-  universe.currentTime = t
-}
 
 /// UI STATE
 let mouse = {x: 0, y: 0}
@@ -58,7 +29,7 @@ let zoom = 38e3
 
 let originBodyIndex = 3
 let selectedBodyIndex = 3
-uiState.selectedBody.value = ephemeris.bodies[selectedBodyIndex]
+uiState.selectedBody.value = selectedBodyIndex
 
 let trajectoryHoverPoint = null
 let currentManeuver = null
@@ -68,7 +39,7 @@ let draggingManeuver = null
 let draggingManeuverLen = 0
 
 /// SETUP
-simUntil(universe.currentTime)
+universe.simUntil(universe.currentTime)
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
@@ -177,7 +148,7 @@ canvas.addEventListener("mousedown", event => {
         const r = Math.hypot(dx, dy)
         if (r < Math.max(10, zoom / 1e9 * ephemeris.bodies[i].radius)) {
           selectedBodyIndex = i
-          uiState.selectedBody.value = ephemeris.bodies[i]
+          uiState.selectedBody.value = i
           if (event.detail === 2) {
             setOriginBody(i)
           }
@@ -377,7 +348,7 @@ function adjustManeuver() {
     currentManeuver.direction = newDirection
   }
   maneuverVessel.trajectory.forgetAfter(Math.min(oldStartTime, currentManeuver.startTime))
-  simUntil(universe.currentTime)
+  universe.simUntil(universe.currentTime)
   trajectoryBBTrees.delete(maneuverVessel.trajectory)
 
   requestDraw()
@@ -427,7 +398,7 @@ function drawUI(ctx) {
           if (e.button === 2) {
             vessel.removeManeuver(maneuver)
             vessel.trajectory.forgetAfter(maneuver.startTime)
-            simUntil(universe.currentTime)
+            universe.simUntil(universe.currentTime)
             trajectoryBBTrees.delete(maneuverVessel.trajectory)
           }
         })
@@ -862,17 +833,20 @@ function requestDraw() {
 }
 
 step.onclick = () => {
-  simUntil(universe.currentTime + ephemeris.step)
+  universe.simUntil(universe.currentTime + ephemeris.step)
+  trajectoryBBTrees = new WeakMap
   requestDraw()
 }
 
 step10.onclick = () => {
-  simUntil(universe.currentTime + ephemeris.step * 10)
+  universe.simUntil(universe.currentTime + ephemeris.step * 10)
+  trajectoryBBTrees = new WeakMap
   requestDraw()
 }
 
 step100.onclick = () => {
-  simUntil(universe.currentTime + ephemeris.step * 100)
+  universe.simUntil(universe.currentTime + ephemeris.step * 100)
+  trajectoryBBTrees = new WeakMap
   requestDraw()
 }
 
@@ -885,7 +859,8 @@ function loop(t) {
   } else {
     const dt = t - last
     last = t
-    simUntil(universe.currentTime + dt / 1000)
+    universe.simUntil(universe.currentTime + dt / 1000)
+    trajectoryBBTrees = new WeakMap
     requestDraw()
   }
 }
@@ -904,3 +879,4 @@ document.querySelector("#stop").onclick = () => {
 
 draw()
 render(html`<${OverlayUI} />`, document.querySelector('#overlay'))
+onUniverseChanged(requestDraw)

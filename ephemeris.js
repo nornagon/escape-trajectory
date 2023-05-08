@@ -267,31 +267,43 @@ export class Trajectory {
   }
 }
 
+/** @typedef {{name: string, mass: number, radius: number, color: string}} Body */
+
 export class Ephemeris {
   #bodies
   #trajectories
   #step
 
-  constructor(initialState) {
-    this.#bodies = initialState.bodies
-    this.#step = initialState.step
-    this.#trajectories = this.#bodies.map((b) => {
-      return new Trajectory(b)
+  /**
+   *
+   * @param {{step: number, bodies: Array<Body>, initialState: Array<{position: Vec2, velocity: Vec2}>}} param0
+   */
+  constructor({step, bodies, initialState}) {
+    if (initialState.length !== bodies.length)
+      throw new Error("initialState.length !== bodies.length")
+    this.#bodies = bodies
+    this.#step = step
+    this.#trajectories = initialState.map((dof) => {
+      return new Trajectory(dof)
     })
   }
 
+  /** @returns {Array<Body>} */
   get bodies() {
     return this.#bodies
   }
 
+  /** @returns {Array<Trajectory>} */
   get trajectories() {
     return this.#trajectories
   }
 
+  /** @returns {number} */
   get tMax() {
     return this.#trajectories.reduce((tMax, t) => Math.min(tMax, t.tMax), this.#trajectories[0].tMax)
   }
 
+  /** @returns {number} */
   get step() {
     return this.#step
   }
@@ -300,21 +312,23 @@ export class Ephemeris {
   prolong(t) {
     while (this.tMax < t) {
       const tInitial = this.tMax
-      const updates = []
-      this.#bodies.forEach((body, i) => {
-        const { position, velocity } = integrate(
-          (state) => gravitation(this.#bodies, i, state.position),
-          body,
-          tInitial,
-          this.#step
-        )
-        updates.push({position, velocity})
-        this.#trajectories[i].append(tInitial + this.#step, position, velocity)
+      const bodyDofs = this.#bodies.map((body, i) => {
+        const trajectory = this.#trajectories[i]
+        const position = trajectory.evaluatePosition(tInitial)
+        const velocity = trajectory.evaluateVelocity(tInitial)
+        return {position, velocity, mass: body.mass}
       })
-      updates.forEach((update, i) => {
-        this.#bodies[i].position = update.position
-        this.#bodies[i].velocity = update.velocity
-      })
+      bodyDofs
+        .map((body, i) =>
+          integrate(
+            (state) => gravitation(bodyDofs, i, state.position),
+            body,
+            tInitial,
+            this.#step
+          ))
+        .forEach(({position, velocity}, i) => {
+          this.#trajectories[i].append(tInitial + this.#step, position, velocity)
+        })
     }
   }
 
@@ -429,6 +443,9 @@ function toleranceToErrorRatio(lengthTolerance, speedTolerance, currentStepSize,
 
 /**
  * Gravitational force at |position| due to all bodies in |bodies| except |i|.
+ * @param {Array<{mass: number, position: Vec2}>} bodies
+ * @param {number} i
+ * @param {Vec2} position
  */
 function gravitation(bodies, i, position) {
   let ax = 0
@@ -467,6 +484,15 @@ function evaluate(acc, initial, t, dt, d) {
     dv: acc(state, t + dt)
   }
 }
+
+/**
+ * RK4 integrator.
+ * @param {(state: {position: Vec2, velocity: Vec2}, t: number) => Vec2} acc
+ * @param {{position: Vec2, velocity: Vec2}} state
+ * @param {number} t
+ * @param {number} dt
+ * @returns {{position: Vec2, velocity: Vec2}}
+ */
 function integrate(acc, state, t, dt) {
   const a = evaluate(acc, state, t, 0, { dp: {x: 0, y: 0}, dv: {x: 0, y: 0} })
   const b = evaluate(acc, state, t, dt*0.5, a)

@@ -1,4 +1,5 @@
 import { Ephemeris } from "./ephemeris.js"
+import { useState, useEffect, useLayoutEffect } from 'preact/hooks'
 
 const celestials = [
   { name: "Sun", mass: 1.98855e30, position: {x: 0, y: 0}, velocity: {x: 0, y: 0}, radius: 695700e3, color: "#ff0" },
@@ -34,7 +35,19 @@ const celestials = [
   { name: "Ceres", mass: 9.393e20, position: {x: 4.14e11, y: 0}, velocity: {x: 0, y: 17.9e3}, radius: 469.73e3, color: "#f0f" },
 ]
 
-const initialSites = {
+const bodies = celestials.map(c => ({
+  name: c.name,
+  mass: c.mass,
+  radius: c.radius,
+  color: c.color,
+}))
+
+const bodyInitialStates = celestials.map(c => ({
+  position: c.position,
+  velocity: c.velocity,
+}))
+
+const sitesByName = {
   Earth: [
     {
       name: "KSC",
@@ -42,28 +55,118 @@ const initialSites = {
         {
           type: "manufactory",
         }
-      ]
+      ],
+      vessels: [],
+      resources: {},
     },
   ],
 }
-for (const celestial of celestials) {
-  celestial.sites = initialSites[celestial.name] || []
-  for (const site of celestial.sites) {
-    site.vessels = []
-  }
-}
+const sites = bodies.map(b => sitesByName[b.name] || [])
 
-const ephemeris = new Ephemeris({
-  bodies: celestials,
-  time: 0,
-  step: 1 * 60,
-  tolerance: 1e-3,
-})
+const Second = 1
+const Minute = 60 * Second
+const Hour = 60 * Minute
+const Day = 24 * Hour
+const Month = 30 * Day
 
 export const universe = {
   currentTime: 0,
+  ephemeris: new Ephemeris({
+    bodies,
+    initialState: bodyInitialStates,
+    step: 1 * 60,
+  }),
+  sites,
   vessels: [],
-  ephemeris,
+  simUntil(t) {
+    const tMax = this.ephemeris.tMax
+    const newTMax = t + 14 * Hour
+    if (newTMax > tMax) {
+      this.ephemeris.prolong(newTMax)
+      //trajectoryBBTrees = new WeakMap
+    }
+    this.vessels.forEach(v => {
+      for (const m of v.maneuvers) {
+        const lastSimulatedTime = v.trajectory.tMax
+        if (m.startTime < lastSimulatedTime)
+          continue
+        // Coast until maneuver start
+        this.ephemeris.flowWithAdaptiveStep(v.trajectory, m.startTime)
+        // Burn until maneuver end
+        this.ephemeris.flowWithAdaptiveStep(v.trajectory, m.endTime, v.intrinsicAcceleration.bind(v))
+      }
+      // Coast until tMax
+      this.ephemeris.flowWithAdaptiveStep(v.trajectory, tMax)
+    })
+    this.currentTime = t
+    universeChanged()
+  },
 }
 
 window.universe = universe
+
+/**
+ * Check if two values are the same value
+ * @param {*} x
+ * @param {*} y
+ * @returns {boolean}
+ */
+export function is(x, y) {
+	return (x === y && (x !== 0 || 1 / x === 1 / y)) || (x !== x && y !== y);
+}
+
+/**
+ * This is taken from https://github.com/facebook/react/blob/main/packages/use-sync-external-store/src/useSyncExternalStoreShimClient.js#L84
+ * on a high level this cuts out the warnings, ... and attempts a smaller implementation
+ */
+export function useSyncExternalStore(subscribe, getSnapshot) {
+	const value = getSnapshot();
+
+	const [{ _instance }, forceUpdate] = useState({
+		_instance: { _value: value, _getSnapshot: getSnapshot }
+	});
+
+	useLayoutEffect(() => {
+		_instance._value = value;
+		_instance._getSnapshot = getSnapshot;
+
+		if (!is(_instance._value, getSnapshot())) {
+			forceUpdate({ _instance });
+		}
+	}, [subscribe, value, getSnapshot]);
+
+	useEffect(() => {
+		if (!is(_instance._value, _instance._getSnapshot())) {
+			forceUpdate({ _instance });
+		}
+
+		return subscribe(() => {
+			if (!is(_instance._value, _instance._getSnapshot())) {
+				forceUpdate({ _instance });
+			}
+		});
+	}, [subscribe]);
+
+	return value;
+}
+
+let currentUniverse = { universe }
+const subscribers = new Set
+export function useUniverse() {
+  return useSyncExternalStore(
+    onUniverseChanged,
+    () => currentUniverse,
+  ).universe
+}
+
+export function universeChanged() {
+  currentUniverse = { universe }
+  console.log('universe changed', subscribers.size)
+  for (const listener of subscribers)
+    listener()
+}
+
+export function onUniverseChanged(listener) {
+  subscribers.add(listener)
+  return () => subscribers.delete(listener)
+}

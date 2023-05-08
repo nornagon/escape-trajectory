@@ -1,6 +1,6 @@
 import { html } from 'htm/preact'
 import { uiState } from './ui-store.js'
-import { universe } from './universe-state.js'
+import { universe, useUniverse } from './universe-state.js'
 import { Vessel } from './vessel.js'
 import { initialOrbitState } from './ephemeris.js'
 
@@ -99,13 +99,14 @@ function Facility({site, facility}) {
   `
 }
 
-function LandedVessel({configuration, site, body}) {
+function LandedVessel({configuration, site, bodyId}) {
   return html`
     <div class="body-details__vessel">
       <div class="body-details__vessel-name">${configuration.name}</div>
       <div class="body-details__vessel-actions">
         <button onclick=${() => {
-          const bodyTrajectory = universe.ephemeris.trajectories[universe.ephemeris.bodies.indexOf(body)]
+          const bodyTrajectory = universe.ephemeris.trajectories[bodyId]
+          const body = universe.ephemeris.bodies[bodyId]
           const bodyState = {
             position: bodyTrajectory.evaluatePosition(universe.currentTime),
             velocity: bodyTrajectory.evaluateVelocity(universe.currentTime),
@@ -113,13 +114,14 @@ function LandedVessel({configuration, site, body}) {
           }
           universe.vessels.push(new Vessel({configuration, initialState: initialOrbitState(bodyState, 200e3 + body.radius)}))
           site.vessels.splice(site.vessels.indexOf(configuration), 1)
+          universe.simUntil(universe.currentTime)
         }}>Launch</button>
       </div>
     </div>
   `
 }
 
-function Site({body, site}) {
+function Site({bodyId, site}) {
   return html`
     <div class="body-details__site">
       <div class="body-details__site-name">${site.name}</div>
@@ -146,12 +148,15 @@ function Site({body, site}) {
         </div>
       </div>
       ${site.facilities.map(facility => html`<${Facility} site=${site} facility=${facility} />`)}
-      ${site.vessels.map(vessel => html`<${LandedVessel} body=${body} site=${site} configuration=${vessel} />`)}
+      ${site.vessels.map(vessel => html`<${LandedVessel} bodyId=${bodyId} site=${site} configuration=${vessel} />`)}
     </div>
   `
 }
 
-export function BodyDetails({body}) {
+export function BodyDetails({bodyId}) {
+  const universe = useUniverse()
+  const body = universe.ephemeris.bodies[bodyId]
+  const sites = universe.sites[bodyId]
   return html`
     <div class="body-details">
       <div class="body-details__title">${body.name}</div>
@@ -164,7 +169,7 @@ export function BodyDetails({body}) {
           <div class="body-details__label">Radius</div>
           <div class="body-details__value">${fmt.format(body.radius / 1e3)} km</div>
         </div>
-        ${body.sites.map(site => html`<${Site} body=${body} site=${site} />`)}
+        ${sites.map(site => html`<${Site} bodyId=${bodyId} site=${site} />`)}
       </div>
     </div>
   `
