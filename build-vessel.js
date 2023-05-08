@@ -1,7 +1,9 @@
 import { html } from 'htm/preact'
 import { useState } from 'preact/hooks'
+import { useSignal } from '@preact/signals'
 import { uiState } from './ui-store.js'
 import { moduleTypes, parameterDisplay } from './modules.js'
+import { VesselConfiguration } from './vessel.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -112,6 +114,7 @@ styles.replaceSync(`
 .vessel-module__parameter-name {
   padding-right: 8px;
   display: table-cell;
+  font-weight: bold;
 }
 
 .vessel-module__parameter-value {
@@ -172,6 +175,10 @@ input[type="range"]::-webkit-slider-thumb {
   margin-bottom: 8px;
 }
 
+.build-vessel__summary__label {
+  font-weight: bold;
+}
+
 .build-vessel__summary__action {
   padding: 2px;
   border: 1px solid #96F9FF;
@@ -193,6 +200,12 @@ input[type="range"]::-webkit-slider-thumb {
 .build-vessel__summary__action button:hover {
   background: #3E9D98;
   color: #172d29;
+}
+
+.build-vessel__summary__action button:disabled {
+  background: gray;
+  color: #172d29;
+  cursor: not-allowed;
 }
 `)
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles]
@@ -255,10 +268,11 @@ function VesselModule({module, onUpdate, onRemove}) {
   `
 }
 
-export function BuildVessel() {
+export function BuildVessel({facility, site}) {
   const [modules, setModules] = useState([])
-  const totalMass = modules.reduce((sum, m) => sum + m.mass, 0)
-  const totalCost = modules.reduce((sum, m) => sum + m.cost, 0)
+  const fuel = useSignal(0)
+  const totalMass = modules.reduce((sum, m) => sum + m.mass, 0) + fuel.value
+  const totalCost = modules.reduce((sum, m) => sum + m.cost, 0) + fuel.value * 100
   return html`
     <div class="build-vessel">
       <div class="build-vessel__title">
@@ -283,6 +297,12 @@ export function BuildVessel() {
           <div class="build-vessel__summary__title">TOTAL</div>
           <div class="build-vessel__summary__content">
             <div class="build-vessel__summary__row">
+              <div class="build-vessel__summary__label">Fuel</div>
+              <div class="build-vessel__summary__value">
+                <input type="number" min="0" max="100" value=${fuel} oninput=${e => fuel.value = Number(e.target.value)} /> kg
+              </div>
+            </div>
+            <div class="build-vessel__summary__row">
               <div class="build-vessel__summary__label">Mass</div>
               <div class="build-vessel__summary__value">${parameterDisplay.mass.format(totalMass)}</div>
             </div>
@@ -292,7 +312,16 @@ export function BuildVessel() {
             </div>
           </div>
           <div class="build-vessel__summary__action">
-            <button>BUILD</button>
+            <button disabled=${modules.length === 0} onclick=${() => {
+              site.vessels.push(new VesselConfiguration({
+                name: "Untitled",
+                color: "lime",
+                modules,
+                resources: { volatiles: fuel.value },
+              }))
+
+              uiState.overlay.value = null
+            }}>BUILD</button>
           </div>
         </div>
       </div>

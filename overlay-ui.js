@@ -5,7 +5,7 @@ import { BuildVessel } from './build-vessel.js'
 
 export function OverlayUI() {
   if (uiState.overlay.value?.type === 'build-vessel') {
-    return html`<${BuildVessel} />`
+    return html`<${BuildVessel} ...${uiState.overlay.value} />`
   }
   if (uiState.selectedBody.value) {
     return html`<${BodyDetails} body=${uiState.selectedBody.value} />`

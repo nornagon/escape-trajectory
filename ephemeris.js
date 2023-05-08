@@ -9,6 +9,25 @@ import { vops } from "./geometry.js"
 
 const G = 6.67408e-11
 
+function orbitalVelocity(m1, m2, r) {
+  return Math.sqrt(G * (m1 + m2) / r)
+}
+/**
+ * Compute the initial state of a body in a circular orbit around |parentBody|.
+ * @param {*} parentBody
+ * @param {number} r
+ * @param {number} t
+ * @returns
+ */
+export function initialOrbitState(parentBody, r, t = 0) {
+  const v = orbitalVelocity(parentBody.mass, 0, r)
+  return {
+    position: vops.add(parentBody.position, { x: r * Math.cos(t), y: r * Math.sin(t) }),
+    velocity: vops.add(parentBody.velocity, { x: 0, y: v }),
+  }
+}
+
+
 /*
 const divisions = 8
 const minDegree = 3
@@ -322,7 +341,6 @@ export class Ephemeris {
       lastStepIsExact: true,
       maxSteps: parameters.maxSteps
     }
-    const toleranceToErrorRatio = this.toleranceToErrorRatio.bind(this, parameters.lengthIntegrationTolerance, parameters.speedIntegrationTolerance)
     const appendState = (state) => {
       trajectory.append(state.time.value, state.positions[0].value, state.velocities[0].value)
     }
@@ -343,7 +361,7 @@ export class Ephemeris {
       computeAccelerations,
       step: integratorParameters.firstStep,
       appendState,
-      toleranceToErrorRatio,
+      toleranceToErrorRatio: toleranceToErrorRatio.bind(null, parameters.lengthIntegrationTolerance, parameters.speedIntegrationTolerance)
     }
 
     solveEmbeddedExplicitRungeKuttaNyström(
@@ -387,26 +405,26 @@ export class Ephemeris {
       accelerations[b2].y += dq.y * µ1OverDq3
     }
   }
+}
 
-  /**
-   * @param {number} lengthTolerance
-   * @param {number} speedTolerance
-   * @param {number} currentStepSize
-   * @param {ODEState<{x: number, y: number}>} _state
-   * @param {{ positionError: Array<{x: number, y: number}>, velocityError: Array<{x: number, y: number}> }} error
-   */
-  toleranceToErrorRatio(lengthTolerance, speedTolerance, currentStepSize, _state, error) {
-    let maxLengthError = 0
-    let maxSpeedError = 0
-    for (const positionError of error.positionError)
-      maxLengthError = Math.max(maxLengthError, vops.norm(positionError))
-    for (const velocityError of error.velocityError)
-      maxSpeedError = Math.max(maxSpeedError, vops.norm(velocityError))
-    return Math.min(
-      lengthTolerance / maxLengthError,
-      speedTolerance / maxSpeedError
-    )
-  }
+/**
+ * @param {number} lengthTolerance
+ * @param {number} speedTolerance
+ * @param {number} currentStepSize
+ * @param {ODEState<{x: number, y: number}>} _state
+ * @param {{ positionError: Array<{x: number, y: number}>, velocityError: Array<{x: number, y: number}> }} error
+ */
+function toleranceToErrorRatio(lengthTolerance, speedTolerance, currentStepSize, _state, error) {
+  let maxLengthError = 0
+  let maxSpeedError = 0
+  for (const positionError of error.positionError)
+    maxLengthError = Math.max(maxLengthError, vops.norm(positionError))
+  for (const velocityError of error.velocityError)
+    maxSpeedError = Math.max(maxSpeedError, vops.norm(velocityError))
+  return Math.min(
+    lengthTolerance / maxLengthError,
+    speedTolerance / maxSpeedError
+  )
 }
 
 /**

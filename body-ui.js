@@ -1,5 +1,8 @@
 import { html } from 'htm/preact'
 import { uiState } from './ui-store.js'
+import { universe } from './universe-state.js'
+import { Vessel } from './vessel.js'
+import { initialOrbitState } from './ephemeris.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -85,19 +88,38 @@ document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles]
 
 const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1, minimumFractionDigits: 1 })
 
-function Facility({facility}) {
+function Facility({site, facility}) {
   return html`
     <div class="body-details__facility">
       <div class="body-details__facility-type">${facility.type}</div>
       <div class="body-details__facility-actions">
-        <button class="body-details__facility-action" onclick=${() => uiState.overlay.value = { type: "build-vessel", facility }}>Build</button>
+        <button class="body-details__facility-action" onclick=${() => uiState.overlay.value = { type: "build-vessel", facility, site }}>Build</button>
       </div>
     </div>
   `
 }
 
-function Site({site}) {
-  const facilities = site.facilities.map(facility => Facility({facility}))
+function LandedVessel({configuration, site, body}) {
+  return html`
+    <div class="body-details__vessel">
+      <div class="body-details__vessel-name">${configuration.name}</div>
+      <div class="body-details__vessel-actions">
+        <button onclick=${() => {
+          const bodyTrajectory = universe.ephemeris.trajectories[universe.ephemeris.bodies.indexOf(body)]
+          const bodyState = {
+            position: bodyTrajectory.evaluatePosition(universe.currentTime),
+            velocity: bodyTrajectory.evaluateVelocity(universe.currentTime),
+            mass: body.mass,
+          }
+          universe.vessels.push(new Vessel({configuration, initialState: initialOrbitState(bodyState, 200e3 + body.radius)}))
+          site.vessels.splice(site.vessels.indexOf(configuration), 1)
+        }}>Launch</button>
+      </div>
+    </div>
+  `
+}
+
+function Site({body, site}) {
   return html`
     <div class="body-details__site">
       <div class="body-details__site-name">${site.name}</div>
@@ -123,13 +145,13 @@ function Site({site}) {
           <div class="body-details__site-resource-amount">${0}</div>
         </div>
       </div>
-      ${facilities}
+      ${site.facilities.map(facility => html`<${Facility} site=${site} facility=${facility} />`)}
+      ${site.vessels.map(vessel => html`<${LandedVessel} body=${body} site=${site} configuration=${vessel} />`)}
     </div>
   `
 }
 
 export function BodyDetails({body}) {
-  const sites = body.sites.map(site => Site({site}))
   return html`
     <div class="body-details">
       <div class="body-details__title">${body.name}</div>
@@ -142,7 +164,7 @@ export function BodyDetails({body}) {
           <div class="body-details__label">Radius</div>
           <div class="body-details__value">${fmt.format(body.radius / 1e3)} km</div>
         </div>
-        ${sites}
+        ${body.sites.map(site => html`<${Site} body=${body} site=${site} />`)}
       </div>
     </div>
   `

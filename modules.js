@@ -22,12 +22,12 @@ export const parameterDisplay = {
   },
 }
 
-class Engine {
+export class Engine {
   static name = "Engine"
   get name() { return this.constructor.name }
 }
 
-class ColdGasNozzle extends Engine {
+export class ColdGasNozzle extends Engine {
   static name = "Cold gas thruster"
   static description = "Blowing pressurized gas through a nozzle produces thrust.  Inefficient but very simple and cheap."
 
@@ -57,7 +57,7 @@ class ColdGasNozzle extends Engine {
   }
 }
 
-class Methalox extends Engine {
+export class MethaloxEngine extends Engine {
   static name = "Methalox rocket"
   static description = "A simple rocket engine that burns methane and oxygen. Low specific impulse, but cheap and easy to build."
 
@@ -88,5 +88,5 @@ class Methalox extends Engine {
 
 export const moduleTypes = [
   ColdGasNozzle,
-  Methalox,
+  MethaloxEngine,
 ]

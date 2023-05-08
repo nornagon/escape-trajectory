@@ -1,4 +1,3 @@
-import { Ephemeris, Trajectory } from "./ephemeris.js"
 import { bbContains, closestTOnSegment, cohenSutherlandLineClip } from "./geometry.js"
 import { InteractionContext2D, polygon } from "./canvas-util.js"
 import { BBTree, vops, lerp } from "./geometry.js"
@@ -7,6 +6,8 @@ import { render } from 'preact'
 import { formatDuration } from "./util.js"
 import { OverlayUI } from "./overlay-ui.js"
 import { uiState } from "./ui-store.js"
+import { universe } from "./universe-state.js"
+const { ephemeris, vessels } = universe
 const {
   add: vadd,
   sub: vsub,
@@ -18,198 +19,11 @@ const {
   dot: vdot,
 } = vops
 
-const celestials = [
-  { name: "Sun", mass: 1.98855e30, position: {x: 0, y: 0}, velocity: {x: 0, y: 0}, radius: 695700e3, color: "#ff0" },
-
-  { name: "Mercury", mass: 3.3011e23, position: {x: 5.791e10, y: 0}, velocity: {x: 0, y: 47.362e3}, radius: 2439.7e3, color: "#aaa" },
-
-  { name: "Venus", mass: 4.8675e24, position: {x: 1.0821e11, y: 0}, velocity: {x: 0, y: 35.02e3}, radius: 6051.8e3, color: "#ac8657" },
-
-  { name: "Earth", mass: 5.97237e24, position: {x: 1.496e11, y: 0}, velocity: {x: 0, y: 29.78e3}, radius: 6371e3, color: "#00f" },
-
-  { name: "Moon", mass: 7.34767309e22, position: {x: 1.496e11 + 3.844e8, y: 0}, velocity: {x: 0, y: 29.78e3 + 1022}, radius: 1737.4e3, color: "#ccc" },
-
-  { name: "Mars", mass: 6.4171e23, position: {x: 2.2794e11, y: 0}, velocity: {x: 0, y: 24.077e3}, radius: 3389.5e3, color: "#ce8258" },
-
-    { name: "Phobos", mass: 1.0659e16, position: {x: 2.2794e11 + 9.376e6, y: 0}, velocity: {x: 0, y: 24.077e3 + 2.138e3}, radius: 11.2667e3, color: "#967a6e" },
-    { name: "Deimos", mass: 1.4762e15, position: {x: 2.2794e11 + 2.326e7, y: 0}, velocity: {x: 0, y: 24.077e3 + 1.351e3}, radius: 6.2e3, color: "#d7bb9a" },
-
-  { name: "Jupiter", mass: 1.8986e27, position: {x: 7.7857e11, y: 0}, velocity: {x: 0, y: 13.07e3}, radius: 69911e3, color: "#f0f" },
-
-    { name: "Callisto", mass: 1.075938e23, position: {x: 7.7857e11 + 1.883e9, y: 0}, velocity: {x: 0, y: 13.07e3 + 8204}, radius: 2410e3, color: "#f0f" },
-    { name: "Io", mass: 8.931938e22, position: {x: 7.7857e11 + 4.21e8, y: 0}, velocity: {x: 0, y: 13.07e3 + 17200}, radius: 1821.6e3, color: "#f0f" },
-    { name: "Europa", mass: 4.799844e22, position: {x: 7.7857e11 + 6.71e8, y: 0}, velocity: {x: 0, y: 13.07e3 + 13700}, radius: 1560.8e3, color: "#f0f" },
-    { name: "Ganymede", mass: 1.4819e23, position: {x: 7.7857e11 + 1.07e9, y: 0}, velocity: {x: 0, y: 13.07e3 + 10800}, radius: 2634.1e3, color: "#f0f" },
-
-  { name: "Saturn", mass: 5.6834e26, position: {x: 1.4335e12, y: 0}, velocity: {x: 0, y: 9.69e3}, radius: 58232e3, color: "#f0f" },
-
-  { name: "Uranus", mass: 8.6810e25, position: {x: 2.8735e12, y: 0}, velocity: {x: 0, y: 6.81e3}, radius: 25362e3, color: "#f0f" },
-
-  { name: "Neptune", mass: 1.0243e26, position: {x: 4.4951e12, y: 0}, velocity: {x: 0, y: 5.43e3}, radius: 24622e3, color: "#f0f" },
-
-  { name: "Pluto", mass: 1.303e22, position: {x: 5.9064e12, y: 0}, velocity: {x: 0, y: 4.74e3}, radius: 1188.3e3, color: "#f0f" },
-
-  { name: "Ceres", mass: 9.393e20, position: {x: 4.14e11, y: 0}, velocity: {x: 0, y: 17.9e3}, radius: 469.73e3, color: "#f0f" },
-]
-
-const initialSites = {
-  Earth: [
-    {
-      name: "KSC",
-      facilities: [
-        {
-          type: "manufactory",
-        }
-      ]
-    },
-  ],
-}
-for (const celestial of celestials) {
-  celestial.sites = initialSites[celestial.name] || []
-}
-
-const earth = celestials.find(c => c.name === 'Earth')
-const G = 6.67408e-11
-function orbitalVelocity(m1, m2, r) {
-  return Math.sqrt(G * (m1 + m2) / r)
-}
-function initialState(parentBody, r, t = 0) {
-  const v = orbitalVelocity(parentBody.mass, 0, r)
-  return {
-    position: vadd(parentBody.position, { x: r * Math.cos(t), y: r * Math.sin(t) }),
-    velocity: vadd(parentBody.velocity, { x: 0, y: v }),
-  }
-}
-
-class Maneuver {
-  #vessel
-  #startTime
-  #duration
-  #initialMass
-  #direction // TODO: rename this. intensity?
-  #originBodyIndex
-
-  constructor({ vessel, startTime, originBodyIndex, initialMass }) {
-    this.#vessel = vessel
-    this.#startTime = startTime
-    this.#duration = 0
-    this.#direction = {x: 0, y: 0}
-    this.#originBodyIndex = originBodyIndex
-    this.#initialMass = initialMass
-  }
-
-  get vessel() { return this.#vessel }
-  get startTime() { return this.#startTime }
-  set startTime(t) { this.#startTime = t }
-  get duration() { return this.#duration }
-  set duration(d) { this.#duration = d }
-  get direction() { return this.#direction }
-  set direction(d) { this.#direction = d }
-  get endTime() { return this.#startTime + this.#duration }
-
-  get prograde() {
-    const t = this.#startTime
-    return vnormalize(vsub(this.#vessel.trajectory.evaluateVelocity(t), ephemeris.trajectories[this.#originBodyIndex].evaluateVelocity(t)))
-  }
-
-  inertialIntrinsicAcceleration(t) {
-    // Intepret |direction| as if +x is prograde, +y is radial.
-    const prograde = this.prograde
-    const radial = vperp(prograde)
-    const direction = vadd(vscale(prograde, this.#direction.x), vscale(radial, this.#direction.y))
-    return this.#computeIntrinsicAcceleration(t, direction)
-  }
-
-  #computeIntrinsicAcceleration(t, direction) {
-    if (t >= this.#startTime && t <= this.#startTime + this.#duration) {
-      const thrust = 1000000 // Newtons
-      // TODO: assume zero mass flow rate for now
-      return vscale(direction, thrust / this.#initialMass)
-    }
-    return { x: 0, y: 0 }
-  }
-}
-
-class Vessel {
-  #name
-  #mass
-  #trajectory
-  #color
-  #maneuvers = []
-  constructor({ name, mass, initialState, color }) {
-    this.#name = name
-    this.#mass = mass
-    this.#trajectory = new Trajectory(initialState)
-    this.#color = color
-  }
-
-  get name() { return this.#name }
-  get mass() { return this.#mass }
-  get trajectory() { return this.#trajectory }
-  get color() { return this.#color }
-  get maneuvers() { return this.#maneuvers }
-
-  intrinsicAcceleration(t) {
-    const a = { x: 0, y: 0 }
-    for (const maneuver of this.#maneuvers) {
-      const ma = maneuver.inertialIntrinsicAcceleration(t)
-      a.x += ma.x
-      a.y += ma.y
-    }
-    return a
-  }
-
-  addManeuver(startTime, originBodyIndex) {
-    this.#maneuvers.push(new Maneuver({
-      vessel: this,
-      startTime,
-      originBodyIndex,
-      initialMass: this.#mass,
-    }))
-    return this.#maneuvers[this.#maneuvers.length - 1]
-  }
-
-  removeManeuver(maneuver) {
-    const i = this.#maneuvers.indexOf(maneuver)
-    if (i >= 0)
-      this.#maneuvers.splice(i, 1)
-    else throw new Error('maneuver not in vessel')
-  }
-}
-
 const Second = 1
 const Minute = 60 * Second
 const Hour = 60 * Minute
 const Day = 24 * Hour
 const Month = 30 * Day
-
-/// WORLD STATE
-const vessels = [
-  new Vessel({
-    name: "Lil Rocket Guy",
-    mass: 50e3,
-    initialState: initialState(earth, 200e3 + earth.radius),
-    color: "#0f0",
-  }),
-  /*
-  new Vessel({
-    name: "ISS",
-    mass: 420e3,
-    initialState: initialState(earth, 400e3 + earth.radius),
-    color: "#0f0",
-  })
-  */
-]
-
-const ephemeris = new Ephemeris({
-  bodies: celestials,
-  time: 0,
-  step: 1 * 60,
-  tolerance: 1e-3,
-})
-window.ephemeris = ephemeris
-
-let currentTime = 0
 
 let trajectoryBBTrees = new WeakMap
 
@@ -233,7 +47,7 @@ function simUntil(t) {
     // Coast until tMax
     ephemeris.flowWithAdaptiveStep(v.trajectory, ephemeris.tMax)
   })
-  currentTime = t
+  universe.currentTime = t
 }
 
 /// UI STATE
@@ -254,7 +68,7 @@ let draggingManeuver = null
 let draggingManeuverLen = 0
 
 /// SETUP
-simUntil(currentTime)
+simUntil(universe.currentTime)
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
@@ -300,7 +114,7 @@ function findNearestTrajectory(screenPos) {
       const bScreenPos = worldToScreen(b.position, b.time)
       const t = closestTOnSegment(aScreenPos, bScreenPos, screenPos)
       const time = lerp(a.time, b.time, t)
-      if (time >= currentTime) {
+      if (time >= universe.currentTime) {
         const p = vlerp(aScreenPos, bScreenPos, t)
         p.t = time
         const d = Math.hypot(p.x - x, p.y - y)
@@ -355,7 +169,7 @@ canvas.addEventListener("mousedown", event => {
     if (!dragged) {
       for (let i = 0; i < ephemeris.bodies.length; i++) {
         const trajectory = ephemeris.trajectories[i]
-        const currentPosition = trajectory.evaluatePosition(currentTime)
+        const currentPosition = trajectory.evaluatePosition(universe.currentTime)
         const screenPos = worldToScreen(currentPosition)
 
         const dx = screenPos.x - event.offsetX
@@ -374,7 +188,7 @@ canvas.addEventListener("mousedown", event => {
       const point = findNearestTrajectory(event)
       if (point) {
         const vessel = vessels[point.i]
-        const m = vessel.addManeuver(point.t, originBodyIndex)
+        const m = vessel.addManeuver(point.t, ephemeris.trajectories[originBodyIndex])
         selectManeuver(vessel, m)
       } else {
         selectManeuver(null, null)
@@ -415,7 +229,7 @@ canvas.addEventListener("mouseup", event => {
 })
 
 
-function worldToScreen(pos, t = currentTime) {
+function worldToScreen(pos, t = universe.currentTime) {
   const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
   const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
@@ -423,7 +237,7 @@ function worldToScreen(pos, t = currentTime) {
     y: (pos.y - originBodyPosition.y) / 1e9 * zoom + canvas.height / 2 + pan.y,
   }
 }
-function screenToWorld(pos, t = currentTime) {
+function screenToWorld(pos, t = universe.currentTime) {
   const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
   const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
@@ -545,8 +359,8 @@ function adjustManeuver() {
     const delta = draggingManeuverLen / 70
     const dt = (delta >= 0 ? Math.pow(delta, 2) : -Math.pow(-delta, 2)) * 10
     currentManeuver.startTime += dt
-    if (currentManeuver.startTime < currentTime)
-      currentManeuver.startTime = currentTime
+    if (currentManeuver.startTime < universe.currentTime)
+      currentManeuver.startTime = universe.currentTime
   } else {
     // If the draggingManeuverLen is less than 80, make the duration shorter.
     // If it's more than 80, make the duration longer.
@@ -563,7 +377,7 @@ function adjustManeuver() {
     currentManeuver.direction = newDirection
   }
   maneuverVessel.trajectory.forgetAfter(Math.min(oldStartTime, currentManeuver.startTime))
-  simUntil(currentTime)
+  simUntil(universe.currentTime)
   trajectoryBBTrees.delete(maneuverVessel.trajectory)
 
   requestDraw()
@@ -600,7 +414,7 @@ function drawUI(ctx) {
 
       ctx.beginPath()
       ctx.arc(screenPos.x, screenPos.y, 5, 0, 2 * Math.PI)
-      if (maneuver.startTime < currentTime) {
+      if (maneuver.startTime < universe.currentTime) {
         ctx.strokeStyle = 'lightblue'
         ctx.lineWidth = 1
         ctx.stroke()
@@ -613,7 +427,7 @@ function drawUI(ctx) {
           if (e.button === 2) {
             vessel.removeManeuver(maneuver)
             vessel.trajectory.forgetAfter(maneuver.startTime)
-            simUntil(currentTime)
+            simUntil(universe.currentTime)
             trajectoryBBTrees.delete(maneuverVessel.trajectory)
           }
         })
@@ -642,12 +456,12 @@ function drawUI(ctx) {
       adjustManeuver()
     })
 
-    if (currentManeuver.startTime >= currentTime) {
+    if (currentManeuver.startTime >= universe.currentTime) {
       ctx.fillStyle = 'white'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
       ctx.font = '18px Martian Mono'
-      ctx.fillText('T–' + formatDuration(currentManeuver.startTime - currentTime), screenPos.x, screenPos.y + 20)
+      ctx.fillText('T–' + formatDuration(currentManeuver.startTime - universe.currentTime), screenPos.x, screenPos.y + 20)
     }
 
     const prograde = currentManeuver.prograde
@@ -807,7 +621,7 @@ function drawUI(ctx) {
   if (selectedBodyIndex != null) {
     const body = ephemeris.bodies[selectedBodyIndex]
     const trajectory = ephemeris.trajectories[selectedBodyIndex]
-    const bodyScreenPos = worldToScreen(trajectory.evaluatePosition(currentTime))
+    const bodyScreenPos = worldToScreen(trajectory.evaluatePosition(universe.currentTime))
 
     const bodyRadius = body.radius / 1e9 * zoom
     // Draw a diamond around the body
@@ -839,7 +653,7 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
 
   ctx.save()
   ctx.beginPath()
-  console.group('trajectory')
+  //console.group('trajectory')
   let nSegs = 0
   while (firstSegment) {
     nSegs++
@@ -883,8 +697,7 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
         }
       }
     }
-    if (lastPoint)
-      console.log(`rendered ${nPoints} points of ${nIterations} iterations, which is ${((lastPoint.t - firstSegment.minT) / nPoints).toFixed(1)} seconds per point`)
+    //if (lastPoint) console.log(`rendered ${nPoints} points of ${nIterations} iterations, which is ${((lastPoint.t - firstSegment.minT) / nPoints).toFixed(1)} seconds per point`)
     if (!more) break
     let nextSegment = bbtree.queryFirst(displayBB)
     while (nextSegment && nextSegment.minT < displayBB.minT) {
@@ -893,8 +706,8 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
     }
     firstSegment = nextSegment
   }
-  console.log('rendered ' + nSegs + ' segments')
-  console.groupEnd()
+  // console.log('rendered ' + nSegs + ' segments')
+  // console.groupEnd()
   ctx.restore()
 }
 
@@ -937,17 +750,17 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
   ctx.lineJoin = 'round'
 
   // Past
-  makeTrajectoryPath(ctx, trajectory, 0, currentTime)
+  makeTrajectoryPath(ctx, trajectory, 0, universe.currentTime)
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
   ctx.stroke()
 
   // Future
-  makeTrajectoryPath(ctx, trajectory, currentTime, trajectory.tMax)
+  makeTrajectoryPath(ctx, trajectory, universe.currentTime, trajectory.tMax)
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
   ctx.stroke()
 
   /*
-  makeTrajectoryPath(ctx, trajectory, currentTime, trajectory.tMax, true)
+  makeTrajectoryPath(ctx, trajectory, universe.currentTime, trajectory.tMax, true)
   ctx.fillStyle = 'lightgreen'
   ctx.fill()
   */
@@ -973,7 +786,7 @@ function draw() {
     const body = ephemeris.bodies[i]
     const trajectory = ephemeris.trajectories[i]
     ctx.fillStyle = body.color
-    const pos = trajectory.evaluatePosition(currentTime)
+    const pos = trajectory.evaluatePosition(universe.currentTime)
     const screenPos = worldToScreen(pos)
     ctx.beginPath()
     const r = Math.max(2, body.radius / 1e9 * zoom)
@@ -981,7 +794,7 @@ function draw() {
     ctx.fill()
 
     if (r > 2) {
-      const sunPos = ephemeris.trajectories[0].evaluatePosition(currentTime)
+      const sunPos = ephemeris.trajectories[0].evaluatePosition(universe.currentTime)
       const sunScreenPos = worldToScreen(sunPos)
       const toSunNorm = vnormalize(vsub(sunScreenPos, pos))
       const offset = vadd(screenPos, vscale(toSunNorm, r * 0.1))
@@ -1017,7 +830,7 @@ function draw() {
 
   // Draw vessel
   for (const vessel of vessels) {
-    const pos = vessel.trajectory.evaluatePosition(currentTime)
+    const pos = vessel.trajectory.evaluatePosition(universe.currentTime)
     const screenPos = worldToScreen(pos)
     ctx.fillStyle = vessel.color
     ctx.beginPath()
@@ -1049,17 +862,17 @@ function requestDraw() {
 }
 
 step.onclick = () => {
-  simUntil(currentTime + ephemeris.step)
+  simUntil(universe.currentTime + ephemeris.step)
   requestDraw()
 }
 
 step10.onclick = () => {
-  simUntil(currentTime + ephemeris.step * 10)
+  simUntil(universe.currentTime + ephemeris.step * 10)
   requestDraw()
 }
 
 step100.onclick = () => {
-  simUntil(currentTime + ephemeris.step * 100)
+  simUntil(universe.currentTime + ephemeris.step * 100)
   requestDraw()
 }
 
@@ -1072,7 +885,7 @@ function loop(t) {
   } else {
     const dt = t - last
     last = t
-    simUntil(currentTime + dt / 1000)
+    simUntil(universe.currentTime + dt / 1000)
     requestDraw()
   }
 }
