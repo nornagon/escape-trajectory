@@ -25,7 +25,7 @@ let trajectoryBBTrees = new WeakMap
 let mouse = {x: 0, y: 0}
 
 let pan = {x: 0, y: 0}
-let zoom = 38e3
+let zoom = 38e3 / 1e9
 
 let originBodyIndex = 3
 let selectedBodyIndex = 3
@@ -43,9 +43,9 @@ universe.simUntil(universe.currentTime)
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
-canvas.width = window.innerWidth
-canvas.height = window.innerHeight - 200
 canvas.style.background = 'black'
+let width = canvas.width
+let height = canvas.height
 
 const ctx = canvas.getContext("2d", { alpha: false })
 
@@ -58,17 +58,17 @@ canvas.addEventListener("wheel", event => {
 
   const wheelDelta = defaultWheelDelta(event)
 
-  const x = event.offsetX - canvas.width / 2 - pan.x
-  const y = event.offsetY - canvas.height / 2 - pan.y
+  const x = event.offsetX - width / 2 - pan.x
+  const y = event.offsetY - height / 2 - pan.y
 
   let k = Math.pow(2, wheelDelta)
   let oldZoom = zoom
   zoom *= k
-  zoom = Math.min(zoom, 1e9)
+  zoom = Math.min(zoom, 1)
   k = zoom / oldZoom
 
-  pan.x = event.offsetX - canvas.width / 2 - x * k
-  pan.y = event.offsetY - canvas.height / 2 - y * k
+  pan.x = event.offsetX - width / 2 - x * k
+  pan.y = event.offsetY - height / 2 - y * k
 
   requestDraw()
 })
@@ -121,13 +121,13 @@ canvas.addEventListener("mousedown", event => {
   const path = interactions.getPathForPoint({x: event.offsetX, y: event.offsetY})
   if (path?.mousedown) return path.mousedown(event)
 
-  const x0 = event.offsetX - canvas.width / 2 - pan.x
-  const y0 = event.offsetY - canvas.height / 2 - pan.y
+  const x0 = event.offsetX - width / 2 - pan.x
+  const y0 = event.offsetY - height / 2 - pan.y
 
   let dragged = false
   function mousemove(event) {
-    pan.x = event.offsetX - canvas.width / 2 - x0
-    pan.y = event.offsetY - canvas.height / 2 - y0
+    pan.x = event.offsetX - width / 2 - x0
+    pan.y = event.offsetY - height / 2 - y0
     dragged = true
 
     requestDraw()
@@ -146,7 +146,7 @@ canvas.addEventListener("mousedown", event => {
         const dx = screenPos.x - event.offsetX
         const dy = screenPos.y - event.offsetY
         const r = Math.hypot(dx, dy)
-        if (r < Math.max(10, zoom / 1e9 * ephemeris.bodies[i].radius)) {
+        if (r < Math.max(10, zoom * ephemeris.bodies[i].radius)) {
           selectedBodyIndex = i
           uiState.selectedBody.value = i
           if (event.detail === 2) {
@@ -204,30 +204,30 @@ function worldToScreen(pos, t = universe.currentTime) {
   const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
   const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
-    x: (pos.x - originBodyPosition.x) / 1e9 * zoom + canvas.width / 2 + pan.x,
-    y: (pos.y - originBodyPosition.y) / 1e9 * zoom + canvas.height / 2 + pan.y,
+    x: (pos.x - originBodyPosition.x) * zoom + width / 2 + pan.x,
+    y: (pos.y - originBodyPosition.y) * zoom + height / 2 + pan.y,
   }
 }
 function screenToWorld(pos, t = universe.currentTime) {
   const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
   const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
-    x: (pos.x - canvas.width / 2 - pan.x) * 1e9 / zoom + originBodyPosition.x,
-    y: (pos.y - canvas.height / 2 - pan.y) * 1e9 / zoom + originBodyPosition.y,
+    x: (pos.x - width / 2 - pan.x) / zoom + originBodyPosition.x,
+    y: (pos.y - height / 2 - pan.y) / zoom + originBodyPosition.y,
   }
 }
 // This version doesn't subtract the origin body's position, so it can be used
 // when drawing trajectories.
 function worldToScreenWithoutOrigin(pos) {
   return {
-    x: pos.x / 1e9 * zoom + canvas.width / 2 + pan.x,
-    y: pos.y / 1e9 * zoom + canvas.height / 2 + pan.y,
+    x: pos.x * zoom + width / 2 + pan.x,
+    y: pos.y * zoom + height / 2 + pan.y,
   }
 }
 function screenToWorldWithoutOrigin(pos) {
   return {
-    x: (pos.x - canvas.width / 2 - pan.x) * 1e9 / zoom,
-    y: (pos.y - canvas.height / 2 - pan.y) * 1e9 / zoom,
+    x: (pos.x - width / 2 - pan.x) / zoom,
+    y: (pos.y - height / 2 - pan.y) / zoom,
   }
 }
 
@@ -280,7 +280,7 @@ function trajectoryVelocityInFrame(trajectory, t) {
 
 function* trajectoryPoints(trajectory, t0, t1, opts = {}) {
   if (t1 === t0) return
-  const { maxPoints = Infinity, resolution = 2e9/zoom } = opts
+  const { maxPoints = Infinity, resolution = 2/zoom } = opts
   const finalTime = t1
   let previousTime = t0
   let previousPosition = trajectoryPosInFrame(trajectory, t0)
@@ -557,7 +557,7 @@ function drawUI(ctx) {
 
     if (draggingManeuver && ctx.on) {
       ctx.beginPath()
-      ctx.rect(0, 0, canvas.width, canvas.height)
+      ctx.rect(0, 0, width, height)
       ctx.on?.('mousemove', (e) => {
         if (draggingManeuver.time) {
           draggingManeuverLen = Math.min(70, Math.max(-70, e.x - draggingManeuver.time.initialPoint.x))
@@ -594,7 +594,7 @@ function drawUI(ctx) {
     const trajectory = ephemeris.trajectories[selectedBodyIndex]
     const bodyScreenPos = worldToScreen(trajectory.evaluatePosition(universe.currentTime))
 
-    const bodyRadius = body.radius / 1e9 * zoom
+    const bodyRadius = body.radius * zoom
     // Draw a diamond around the body
     const diamondRadius = 10
     ctx.beginPath()
@@ -612,10 +612,10 @@ function drawUI(ctx) {
 function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
   const bbtree = bbTreeForTrajectory(trajectory)
   const displayBB = {
-    minX: (-canvas.width / 2 - pan.x) / zoom * 1e9,
-    minY: (-canvas.height / 2 - pan.y) / zoom * 1e9,
-    maxX: (canvas.width / 2 - pan.x) / zoom * 1e9,
-    maxY: (canvas.height / 2 - pan.y) / zoom * 1e9,
+    minX: (-width / 2 - pan.x) / zoom,
+    minY: (-height / 2 - pan.y) / zoom,
+    maxX: (width / 2 - pan.x) / zoom,
+    maxY: (height / 2 - pan.y) / zoom,
     minT: t0,
     maxT: Infinity
   }
@@ -650,15 +650,15 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
       if (!startedBeingOnScreen && (p.t >= firstSegment.maxT || (lastPoint && cohenSutherlandLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, {...lastPoint}, {...p})) || bbContains(displayBB, p))) {
         startedBeingOnScreen = true
         if (!lastPoint) lastPoint = p
-        ctx.moveTo(lastPoint.x * zoom/1e9 + canvas.width / 2 + pan.x, lastPoint.y * zoom/1e9 + canvas.height / 2 + pan.y)
+        ctx.moveTo(lastPoint.x * zoom + width / 2 + pan.x, lastPoint.y * zoom + height / 2 + pan.y)
       }
       lastPoint = p
       if (startedBeingOnScreen) {
         if (drawPoints) {
-          ctx.moveTo(p.x * zoom/1e9 + canvas.width / 2 + pan.x, p.y * zoom/1e9 + canvas.height / 2 + pan.y)
-          ctx.arc(p.x * zoom/1e9 + canvas.width / 2 + pan.x, p.y * zoom/1e9 + canvas.height / 2 + pan.y, 2, 0, 2 * Math.PI)
+          ctx.moveTo(p.x * zoom + width / 2 + pan.x, p.y * zoom + height / 2 + pan.y)
+          ctx.arc(p.x * zoom + width / 2 + pan.x, p.y * zoom + height / 2 + pan.y, 2, 0, 2 * Math.PI)
         } else {
-          ctx.lineTo(p.x * zoom/1e9 + canvas.width / 2 + pan.x, p.y * zoom/1e9 + canvas.height / 2 + pan.y)
+          ctx.lineTo(p.x * zoom + width / 2 + pan.x, p.y * zoom + height / 2 + pan.y)
         }
         nPoints++
         if (!bbContains(displayBB, p)) {
@@ -685,10 +685,10 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
 function drawTrajectory(ctx, trajectory, t0 = 0) {
   const bbtree = bbTreeForTrajectory(trajectory)
   const displayBB = {
-    minX: (-canvas.width / 2 - pan.x) / zoom * 1e9,
-    minY: (-canvas.height / 2 - pan.y) / zoom * 1e9,
-    maxX: (canvas.width / 2 - pan.x) / zoom * 1e9,
-    maxY: (canvas.height / 2 - pan.y) / zoom * 1e9,
+    minX: (-width / 2 - pan.x) / zoom,
+    minY: (-height / 2 - pan.y) / zoom,
+    maxX: (width / 2 - pan.x) / zoom,
+    maxY: (height / 2 - pan.y) / zoom,
     minT: t0,
     maxT: Infinity
   }
@@ -708,10 +708,10 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
         else
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
         ctx.strokeRect(
-          (bb.minX / 1e9) * zoom + pan.x + canvas.width / 2,
-          (bb.minY / 1e9) * zoom + pan.y + canvas.height / 2,
-          (bb.maxX - bb.minX) / 1e9 * zoom,
-          (bb.maxY - bb.minY) / 1e9 * zoom
+          (bb.minX) * zoom + pan.x + width / 2,
+          (bb.minY) * zoom + pan.y + height / 2,
+          (bb.maxX - bb.minX) * zoom,
+          (bb.maxY - bb.minY) * zoom
         )
       }
     }
@@ -740,7 +740,9 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
 function draw() {
   const start = performance.now()
   ctx.save()
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.scale(devicePixelRatio, devicePixelRatio)
+  ctx.save()
+  ctx.clearRect(0, 0, width, height)
 
   // Draw trajectories
   ctx.lineWidth = 1
@@ -760,7 +762,7 @@ function draw() {
     const pos = trajectory.evaluatePosition(universe.currentTime)
     const screenPos = worldToScreen(pos)
     ctx.beginPath()
-    const r = Math.max(2, body.radius / 1e9 * zoom)
+    const r = Math.max(2, body.radius * zoom)
     ctx.arc(screenPos.x, screenPos.y, r, 0, 2 * Math.PI)
     ctx.fill()
 
@@ -792,7 +794,6 @@ function draw() {
     ctx.textBaseline = 'middle'
     ctx.fillText(body.name, screenPos.x + diamondRadius + 10, screenPos.y)
   }
-  ctx.restore()
 
   // Draw vessel trajectories
   for (const vessel of vessels) {
@@ -813,6 +814,8 @@ function draw() {
 
   ctx.save()
   drawUI(ctx)
+  ctx.restore()
+
   ctx.restore()
 
   const end = performance.now()
@@ -877,6 +880,20 @@ document.querySelector("#stop").onclick = () => {
   }
 }
 
-draw()
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio;
+  const rect = canvas.getBoundingClientRect();
+
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+
+  width = rect.width
+  height = rect.height
+
+  requestDraw()
+}
+window.addEventListener('resize', resizeCanvas)
+resizeCanvas()
+
 render(html`<${OverlayUI} />`, document.querySelector('#overlay'))
 onUniverseChanged(requestDraw)
