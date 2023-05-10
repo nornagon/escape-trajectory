@@ -12,3 +12,20 @@ export function formatDuration(seconds) {
   result += `${seconds2}s`
   return result
 }
+
+// Yields all contiguous subsequences of length `step` from `generator`.
+export function* sliding(generator, step) {
+  let buffer = []
+  for (const x of generator) {
+    buffer.push(x)
+    if (buffer.length === step) {
+      yield buffer
+      buffer = buffer.slice(1)
+    }
+  }
+}
+
+// Transform each element of `generator` with `f`.
+export function* map(generator, f) {
+  for (const x of generator) yield f(x)
+}

@@ -3,7 +3,7 @@ import { InteractionContext2D, polygon } from "./canvas-util.js"
 import { BBTree, vops, lerp } from "./geometry.js"
 import { html } from 'htm/preact'
 import { render } from 'preact'
-import { formatDuration } from "./util.js"
+import { formatDuration, map, sliding } from "./util.js"
 import { OverlayUI } from "./overlay-ui.js"
 import { uiState } from "./ui-store.js"
 import { universe, onUniverseChanged } from "./universe-state.js"
@@ -236,20 +236,18 @@ function bbTreeForTrajectory(trajectory) {
   if (!bbtree) {
     bbtree = new BBTree
     trajectoryBBTrees.set(trajectory, bbtree)
-    for (const [a, b] of trajectory.segments()) {
-      const aPos = trajectoryPosInFrame(trajectory, a.time)
-      const bPos = trajectoryPosInFrame(trajectory, b.time)
-      bbtree.insert({
-        minX: Math.min(aPos.x, bPos.x),
-        minY: Math.min(aPos.y, bPos.y),
-        maxX: Math.max(aPos.x, bPos.x),
-        maxY: Math.max(aPos.y, bPos.y),
-        minT: a.time,
-        maxT: b.time,
-        a,
-        b,
-      })
-    }
+  }
+  for (const [{inFrame: aPos, p: a}, {inFrame: bPos, p: b}] of sliding(map(trajectory.points(bbtree.boundingBox?.maxT ?? 0), p => ({inFrame: trajectoryPosInFrame(trajectory, p.time), p})), 2)) {
+    bbtree.insert({
+      minX: Math.min(aPos.x, bPos.x),
+      minY: Math.min(aPos.y, bPos.y),
+      maxX: Math.max(aPos.x, bPos.x),
+      maxY: Math.max(aPos.y, bPos.y),
+      minT: a.time,
+      maxT: b.time,
+      a,
+      b,
+    })
   }
   return bbtree
 }
@@ -837,19 +835,16 @@ function requestDraw() {
 
 step.onclick = () => {
   universe.simUntil(universe.currentTime + ephemeris.step)
-  trajectoryBBTrees = new WeakMap
   requestDraw()
 }
 
 step10.onclick = () => {
   universe.simUntil(universe.currentTime + ephemeris.step * 10)
-  trajectoryBBTrees = new WeakMap
   requestDraw()
 }
 
 step100.onclick = () => {
   universe.simUntil(universe.currentTime + ephemeris.step * 100)
-  trajectoryBBTrees = new WeakMap
   requestDraw()
 }
 
@@ -863,7 +858,6 @@ function loop(t) {
     const dt = t - last
     last = t
     universe.simUntil(universe.currentTime + dt / 1000)
-    trajectoryBBTrees = new WeakMap
     requestDraw()
   }
 }

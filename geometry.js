@@ -149,6 +149,11 @@ export class BBTree {
     return this.#layers[0].length
   }
   get layers() { return this.#layers }
+
+  get boundingBox() {
+    return this.#layers[this.#layers.length - 1][0]
+  }
+
   /** @param {AABB} bb */
   insert(bb) {
     if (this.#layers[0].length && bb.minT !== this.#layers[0][this.#layers[0].length - 1].maxT)

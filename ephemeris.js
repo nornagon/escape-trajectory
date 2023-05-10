@@ -201,6 +201,15 @@ export class Trajectory {
     return this.#points.length ? this.#points[this.#points.length - 1].time : 0
   }
 
+  *points(minT = 0) {
+    if (minT === 0) {
+      yield* this.#points
+    } else {
+      const i = lowerBound(this.#points, (p) => p.time < minT)
+      for (let j = i; j < this.#points.length; j++) yield this.#points[j]
+    }
+  }
+
   *segments() {
     for (let i = 1; i < this.#points.length; i++) {
       yield [this.#points[i - 1], this.#points[i]]
