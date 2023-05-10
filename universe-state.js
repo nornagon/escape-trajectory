@@ -83,7 +83,6 @@ export const universe = {
     const newTMax = t + 14 * Hour
     if (newTMax > tMax) {
       this.ephemeris.prolong(newTMax)
-      //trajectoryBBTrees = new WeakMap
     }
     this.vessels.forEach(v => {
       for (const m of v.maneuvers) {
@@ -150,18 +149,11 @@ export function useSyncExternalStore(subscribe, getSnapshot) {
 	return value;
 }
 
+// Wrapped in an object so that it's fresh whenever the universe changes.
 let currentUniverse = { universe }
 const subscribers = new Set
-export function useUniverse() {
-  return useSyncExternalStore(
-    onUniverseChanged,
-    () => currentUniverse,
-  ).universe
-}
-
 export function universeChanged() {
   currentUniverse = { universe }
-  console.log('universe changed', subscribers.size)
   for (const listener of subscribers)
     listener()
 }
@@ -169,4 +161,11 @@ export function universeChanged() {
 export function onUniverseChanged(listener) {
   subscribers.add(listener)
   return () => subscribers.delete(listener)
+}
+
+export function useUniverse() {
+  return useSyncExternalStore(
+    onUniverseChanged,
+    () => currentUniverse,
+  ).universe
 }

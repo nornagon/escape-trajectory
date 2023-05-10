@@ -6,7 +6,7 @@
  * @typedef { import("./types").Ops<T> } Ops<T> */
 
 /**
- * @typedef {Object} Method
+ * @typedef {Object} EmbeddedExplicitRungeKuttaNyströmMethod
  * @property {number} higher_order
  * @property {number} lower_order
  * @property {number} stages
@@ -38,7 +38,7 @@ class FixedStrictlyLowerTriangularMatrix {
   }
 }
 
-/** @type {Method} */
+/** @type {EmbeddedExplicitRungeKuttaNyströmMethod} */
 export const DormandالمكاوىPrince1986RKN434FM = {
   higher_order: 4,
   lower_order: 3,
@@ -212,7 +212,7 @@ export class ODEState {
  *   appendState: (state: ODEState<T>) => void,
  *   toleranceToErrorRatio: (h: number, currentState: ODEState<T>, errorEstimate: { positionError: Array<T>, velocityError: Array<T> }) => number
  * }} instance
- * @param {Method} method
+ * @param {EmbeddedExplicitRungeKuttaNyströmMethod} method
  * @param {number} tFinal
  */
 export function solveEmbeddedExplicitRungeKuttaNyström(ops, instance, method, tFinal) {

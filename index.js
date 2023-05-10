@@ -25,7 +25,7 @@ let trajectoryBBTrees = new WeakMap
 let mouse = {x: 0, y: 0}
 
 let pan = {x: 0, y: 0}
-let zoom = 38e3 / 1e9
+let zoom = 38e-6
 
 let originBodyIndex = 3
 let selectedBodyIndex = 3
@@ -766,7 +766,7 @@ function draw() {
     ctx.arc(screenPos.x, screenPos.y, r, 0, 2 * Math.PI)
     ctx.fill()
 
-    if (r > 2) {
+    if (r > 2 && i !== 0) {
       const sunPos = ephemeris.trajectories[0].evaluatePosition(universe.currentTime)
       const sunScreenPos = worldToScreen(sunPos)
       const toSunNorm = vnormalize(vsub(sunScreenPos, pos))
