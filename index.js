@@ -19,6 +19,13 @@ const {
   dot: vdot,
 } = vops
 
+const Second = 1
+const Minute = 60 * Second
+const Hour = 60 * Minute
+const Day = 24 * Hour
+const Month = 30 * Day
+
+
 let trajectoryBBTrees = new WeakMap
 
 /// UI STATE
@@ -37,9 +44,10 @@ let maneuverVessel = null
 
 let draggingManeuver = null
 let draggingManeuverLen = 0
+let predictionHorizon = 1 * Day
 
 /// SETUP
-universe.simUntil(universe.currentTime)
+universe.prolong(1 * Day)
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
@@ -346,7 +354,7 @@ function adjustManeuver() {
     currentManeuver.direction = newDirection
   }
   maneuverVessel.trajectory.forgetAfter(Math.min(oldStartTime, currentManeuver.startTime))
-  universe.simUntil(universe.currentTime)
+  universe.recompute()
   trajectoryBBTrees.delete(maneuverVessel.trajectory)
 
   requestDraw()
@@ -396,7 +404,7 @@ function drawUI(ctx) {
           if (e.button === 2) {
             vessel.removeManeuver(maneuver)
             vessel.trajectory.forgetAfter(maneuver.startTime)
-            universe.simUntil(universe.currentTime)
+            universe.recompute()
             trajectoryBBTrees.delete(maneuverVessel.trajectory)
           }
         })
@@ -834,18 +842,18 @@ function requestDraw() {
 }
 
 step.onclick = () => {
-  universe.simUntil(universe.currentTime + ephemeris.step)
-  requestDraw()
+  universe.currentTime += ephemeris.step
+  universe.prolong(universe.currentTime + predictionHorizon)
 }
 
 step10.onclick = () => {
-  universe.simUntil(universe.currentTime + ephemeris.step * 10)
-  requestDraw()
+  universe.currentTime += ephemeris.step * 10
+  universe.prolong(universe.currentTime + predictionHorizon)
 }
 
 step100.onclick = () => {
-  universe.simUntil(universe.currentTime + ephemeris.step * 100)
-  requestDraw()
+  universe.currentTime += ephemeris.step * 100
+  universe.prolong(universe.currentTime + predictionHorizon)
 }
 
 let timeLoop = null
@@ -857,8 +865,8 @@ function loop(t) {
   } else {
     const dt = t - last
     last = t
-    universe.simUntil(universe.currentTime + dt / 1000)
-    requestDraw()
+    universe.currentTime += dt / 1000
+    universe.prolong(universe.currentTime + predictionHorizon)
   }
 }
 

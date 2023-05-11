@@ -63,42 +63,47 @@ const sitesByName = {
 }
 const sites = bodies.map(b => sitesByName[b.name] || [])
 
-const Second = 1
-const Minute = 60 * Second
-const Hour = 60 * Minute
-const Day = 24 * Hour
-const Month = 30 * Day
+/** @type {Array<import('./vessel.js').Vessel>} */
+const vessels = []
 
 export const universe = {
   currentTime: 0,
+  tMax: 0,
   ephemeris: new Ephemeris({
     bodies,
     initialState: bodyInitialStates,
     step: 1 * 60,
   }),
   sites,
-  vessels: [],
-  simUntil(t) {
-    const tMax = this.ephemeris.tMax
-    const newTMax = t + 14 * Hour
-    if (newTMax > tMax) {
-      this.ephemeris.prolong(newTMax)
-    }
+  vessels,
+  prolong(tMax) {
+    this.tMax = tMax
+    let anyChanged = tMax > this.ephemeris.tMax
+    this.ephemeris.prolong(tMax)
     this.vessels.forEach(v => {
+      const lastSimulatedTime = v.trajectory.tMax
       for (const m of v.maneuvers) {
-        const lastSimulatedTime = v.trajectory.tMax
         if (m.startTime < lastSimulatedTime)
           continue
+        if (m.endTime >= tMax)
+          throw new Error("I haven't considered this case yet")
+        anyChanged = true
         // Coast until maneuver start
         this.ephemeris.flowWithAdaptiveStep(v.trajectory, m.startTime)
         // Burn until maneuver end
         this.ephemeris.flowWithAdaptiveStep(v.trajectory, m.endTime, v.intrinsicAcceleration.bind(v))
       }
-      // Coast until tMax
-      this.ephemeris.flowWithAdaptiveStep(v.trajectory, tMax)
+      if (v.trajectory.tMax < tMax) {
+        // Coast until tMax
+        this.ephemeris.flowWithAdaptiveStep(v.trajectory, tMax)
+        anyChanged = true
+      }
     })
-    this.currentTime = t
-    universeChanged()
+    if (anyChanged)
+      universeChanged()
+  },
+  recompute() {
+    this.prolong(this.tMax)
   },
 }
 

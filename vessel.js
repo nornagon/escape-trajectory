@@ -17,6 +17,10 @@ export class Maneuver {
   #direction // TODO: rename this. intensity?
   #referenceTrajectory
 
+  /**
+   *
+   * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, initialMass: number}} param0
+   */
   constructor({ vessel, startTime, referenceTrajectory, initialMass }) {
     this.#vessel = vessel
     this.#startTime = startTime
@@ -64,6 +68,7 @@ export class Maneuver {
 export class Vessel {
   #configuration
   #trajectory
+  /** @type {Array<Maneuver>} */
   #maneuvers = []
   constructor({ configuration, initialState }) {
     this.#configuration = configuration
@@ -77,6 +82,10 @@ export class Vessel {
   get color() { return this.#configuration.color }
   get maneuvers() { return this.#maneuvers }
 
+  /**
+   * @param {number} t
+   * @returns {Vec2}
+   */
   intrinsicAcceleration(t) {
     const a = { x: 0, y: 0 }
     for (const maneuver of this.#maneuvers) {

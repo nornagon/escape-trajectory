@@ -19,6 +19,13 @@
  * @property {Array<number>} bʹ
  */
 
+/**
+ * @typedef {Object} SymmetricLinearMultistepMethod
+ * @property {Array<number>} alpha
+ * @property {Array<number>} beta_numerator
+ * @property {number} beta_denominator
+ */
+
 class FixedStrictlyLowerTriangularMatrix {
   #data
   /**
@@ -363,4 +370,28 @@ export function solveEmbeddedExplicitRungeKuttaNyström(ops, instance, method, t
   if (!finalState)
     throw new Error("!finalState");
   currentState.copyFrom(finalState);
+}
+
+/**
+ * @see https://github.com/mockingbirdnest/Principia/blob/7b93a3b06cbd3787ff2697d9bd57d1c77ddd9968/integrators/embedded_explicit_runge_kutta_integrator_body.hpp#L48
+ * @template T
+ * @param {Ops<T>} ops
+ * @param {{
+ *   currentState: ODEState<T>,
+ *   parameters: {
+ *     firstStep: number,
+ *     safetyFactor: number,
+ *     maxSteps: number,
+ *     lastStepIsExact: boolean
+ *   },
+ *   computeAccelerations: (t: number, q: Array<T>, a: Array<T>) => void,
+ *   step: number,
+ *   appendState: (state: ODEState<T>) => void,
+ *   toleranceToErrorRatio: (h: number, currentState: ODEState<T>, errorEstimate: { positionError: Array<T>, velocityError: Array<T> }) => number
+ * }} instance
+ * @param {SymmetricLinearMultistepMethod} method
+ * @param {number} tFinal
+ */
+export function solveSymmetricLinearMultistep(ops, instance, method, tFinal) {
+  const { alpha, beta_numerator, beta_denominator } = method;
 }

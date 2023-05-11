@@ -114,7 +114,7 @@ function LandedVessel({configuration, site, bodyId}) {
           }
           universe.vessels.push(new Vessel({configuration, initialState: initialOrbitState(bodyState, 200e3 + body.radius)}))
           site.vessels.splice(site.vessels.indexOf(configuration), 1)
-          universe.simUntil(universe.currentTime)
+          universe.recompute()
         }}>Launch</button>
       </div>
     </div>
