@@ -10,6 +10,7 @@ import { universe, onUniverseChanged } from "./universe-state.js"
 const { ephemeris, vessels } = universe
 const {
   add: vadd,
+  addi: vaddi,
   sub: vsub,
   scale: vscale,
   perp: vperp,
@@ -312,7 +313,7 @@ function* trajectoryPoints(trajectory, t0, t1, opts = {}) {
         dt = t - previousTime
       }
       position = trajectoryPosInFrame(trajectory, t)
-      const extrapolatedPosition = vadd(previousPosition, vscale(previousVelocity, dt))
+      const extrapolatedPosition = vaddi(vscale(previousVelocity, dt), previousPosition)
 
       // TODO: ??? is this right?
       estimatedError = Math.hypot(position.x - extrapolatedPosition.x, position.y - extrapolatedPosition.y)
