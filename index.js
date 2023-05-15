@@ -44,10 +44,10 @@ let maneuverVessel = null
 
 let draggingManeuver = null
 let draggingManeuverLen = 0
-let predictionHorizon = 1 * Day
+let predictionHorizon = 10 * Day
 
 /// SETUP
-universe.prolong(1 * Day)
+universe.prolong(predictionHorizon)
 
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas")
@@ -401,11 +401,11 @@ function drawUI(ctx) {
         ctx.on?.('mousedown', (e) => {
           if (e.button === 0)
             selectManeuver(vessel, maneuver)
-          if (e.button === 2) {
+          if (e.button === 2 && maneuver.startTime >= universe.currentTime) {
             vessel.removeManeuver(maneuver)
             vessel.trajectory.forgetAfter(maneuver.startTime)
             universe.recompute()
-            trajectoryBBTrees.delete(maneuverVessel.trajectory)
+            trajectoryBBTrees.delete(vessel.trajectory)
           }
         })
       }
@@ -630,7 +630,7 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
 
   ctx.save()
   ctx.beginPath()
-  //console.group('trajectory')
+  console.group('trajectory')
   let nSegs = 0
   while (firstSegment) {
     nSegs++
@@ -674,7 +674,7 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
         }
       }
     }
-    //if (lastPoint) console.log(`rendered ${nPoints} points of ${nIterations} iterations, which is ${((lastPoint.t - firstSegment.minT) / nPoints).toFixed(1)} seconds per point`)
+    if (lastPoint) console.log(`rendered ${nPoints} points of ${nIterations} iterations, which is ${((lastPoint.t - firstSegment.minT) / nPoints).toFixed(1)} seconds per point`)
     if (!more) break
     let nextSegment = bbtree.queryFirst(displayBB)
     while (nextSegment && nextSegment.minT < displayBB.minT) {
@@ -683,8 +683,8 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
     }
     firstSegment = nextSegment
   }
-  // console.log('rendered ' + nSegs + ' segments')
-  // console.groupEnd()
+  console.log('rendered ' + nSegs + ' segments')
+  console.groupEnd()
   ctx.restore()
 }
 
@@ -732,15 +732,16 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
   ctx.stroke()
 
   // Future
-  makeTrajectoryPath(ctx, trajectory, universe.currentTime, trajectory.tMax)
+  makeTrajectoryPath(ctx, trajectory, universe.currentTime, Math.min(universe.tMax, trajectory.tMax))
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
   ctx.stroke()
 
-  /*
-  makeTrajectoryPath(ctx, trajectory, universe.currentTime, trajectory.tMax, true)
-  ctx.fillStyle = 'lightgreen'
-  ctx.fill()
-  */
+  let debugShowTrajectoryPoints = false
+  if (debugShowTrajectoryPoints) {
+    makeTrajectoryPath(ctx, trajectory, universe.currentTime, trajectory.tMax, true)
+    ctx.fillStyle = 'lightgreen'
+    ctx.fill()
+  }
 }
 
 function draw() {
@@ -753,7 +754,7 @@ function draw() {
   // Draw trajectories
   ctx.lineWidth = 1
 
-  const tMax = ephemeris.tMax
+  const tMax = universe.tMax
   for (const trajectory of ephemeris.trajectories) {
     const idx = ephemeris.trajectories.indexOf(trajectory)
     if (idx === originBodyIndex) continue
@@ -880,6 +881,16 @@ document.querySelector("#stop").onclick = () => {
     timeLoop = null
     last = null
   }
+}
+
+document.querySelector("#extendPrediction").onclick = () => {
+  predictionHorizon += 10 * Hour
+  universe.prolong(universe.currentTime + predictionHorizon)
+}
+
+document.querySelector("#reducePrediction").onclick = () => {
+  predictionHorizon = Math.max(1 * Hour, predictionHorizon - 10 * Hour)
+  universe.limit(universe.currentTime + predictionHorizon)
 }
 
 function resizeCanvas() {

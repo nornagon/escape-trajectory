@@ -77,8 +77,8 @@ export const universe = {
   sites,
   vessels,
   prolong(tMax) {
+    let anyChanged = tMax !== this.tMax
     this.tMax = tMax
-    let anyChanged = tMax > this.ephemeris.tMax
     this.ephemeris.prolong(tMax)
     this.vessels.forEach(v => {
       const lastSimulatedTime = v.trajectory.tMax
@@ -101,6 +101,12 @@ export const universe = {
     })
     if (anyChanged)
       universeChanged()
+  },
+  limit(tMax) {
+    if (tMax >= this.tMax)
+      throw new Error("Can't limit to a time in the future")
+    this.tMax = tMax
+    universeChanged()
   },
   recompute() {
     this.prolong(this.tMax)
