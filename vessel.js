@@ -125,7 +125,7 @@ export class VesselConfiguration {
     this.#name = name
     this.#color = color
     this.#modules = modules
-    this.#resources = resources
+    this.#resources = {volatiles: 0, metals: 0, rareMetals: 0, fissionables: 0, ...resources}
   }
 
   get name() { return this.#name }
@@ -135,5 +135,23 @@ export class VesselConfiguration {
 
   get mass() {
     return this.#modules.reduce((sum, m) => sum + m.mass, 0) + Object.values(this.#resources).reduce((sum, r) => sum + r, 0)
+  }
+
+  get deltaV() {
+    // Assume all engines are active.
+    // ∆v = Isp * g0 * ln(m0 / m1)
+    // but we can't just add Isps from multiple engines
+    // we can add thrust, and we can add mass flow rate
+    // and T = v_e * m_dot
+    // so v_e = T / m_dot
+    // thus overall effective v_e = ∑T_i / ∑m_dot_i
+    // and ∆v = ∑T_i / ∑m_dot_i * g0 * ln(m0 / m1)
+
+    const totalThrust = this.#modules.reduce((sum, m) => sum + m.thrust, 0)
+    const totalMassFlowRate = this.#modules.reduce((sum, m) => sum + m.massFlowRate, 0)
+    const initialMass = this.mass
+    const finalMass = initialMass - this.#resources.volatiles
+    const effectiveIsp = totalThrust / totalMassFlowRate
+    return effectiveIsp * 9.80665 * Math.log(initialMass / finalMass)
   }
 }

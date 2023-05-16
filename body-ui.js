@@ -3,6 +3,7 @@ import { uiState } from './ui-store.js'
 import { universe, useUniverse } from './universe-state.js'
 import { Vessel } from './vessel.js'
 import { initialOrbitState } from './ephemeris.js'
+import { parameterDisplay } from './modules.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -50,6 +51,12 @@ styles.replaceSync(`
   color: #96F9FF;
 }
 
+.body-details__site-vessels:before {
+  content: "VESSELS";
+  font-size: 0.8em;
+  color: #96F9FF;
+}
+
 .body-details__site-resources {
   display: flex;
   flex-direction: row;
@@ -67,6 +74,36 @@ styles.replaceSync(`
   text-transform: uppercase;
 }
 
+.body-details__site-vessels {
+  margin-left: 8px;
+  margin-top: 8px;
+}
+
+.body-details__vessel {
+  margin-left: 8px;
+  margin-top: 8px;
+  border-left: 3px solid #96F9FF;
+  padding-left: 8px;
+}
+
+.body-details__vessel-details {
+}
+
+.body-details__vessel-detail {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.body-details__vessel-detail-label {
+  color: #3bffbd;
+  text-transform: uppercase;
+}
+
+.body-details__vessel-detail-value {
+  color: lightgray;
+}
+
 .body-details button {
   background: #96F9FF;
   border: none;
@@ -81,6 +118,12 @@ styles.replaceSync(`
 .body-details button:hover {
   background: #3E9D98;
   color: #172d29;
+}
+
+.body-details__vessel-resource {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
 }
 
 `)
@@ -103,6 +146,30 @@ function LandedVessel({configuration, site, bodyId}) {
   return html`
     <div class="body-details__vessel">
       <div class="body-details__vessel-name">${configuration.name}</div>
+      <div class="body-details__vessel-details">
+        <div class="body-details__vessel-detail">
+          <div class="body-details__vessel-detail-label">Mass</div>
+          <div class="body-details__vessel-detail-value">${parameterDisplay.mass.format(configuration.mass)}</div>
+        </div>
+        <div class="body-details__vessel-resources">
+          <div class="body-details__vessel-resource">
+            <div class="body-details__vessel-resource-name">V</div>
+            <div class="body-details__vessel-resource-amount">${parameterDisplay.mass.format(configuration.resources.volatiles)}</div>
+          </div>
+          <div class="body-details__vessel-resource">
+            <div class="body-details__vessel-resource-name">M</div>
+            <div class="body-details__vessel-resource-amount">${parameterDisplay.mass.format(configuration.resources.metals)}</div>
+          </div>
+          <div class="body-details__vessel-resource">
+            <div class="body-details__vessel-resource-name">R</div>
+            <div class="body-details__vessel-resource-amount">${parameterDisplay.mass.format(configuration.resources.rareMetals)}</div>
+          </div>
+          <div class="body-details__vessel-resource">
+            <div class="body-details__vessel-resource-name">U</div>
+            <div class="body-details__vessel-resource-amount">${parameterDisplay.mass.format(configuration.resources.fissionables)}</div>
+          </div>
+        </div>
+      </div>
       <div class="body-details__vessel-actions">
         <button onclick=${() => {
           const bodyTrajectory = universe.ephemeris.trajectories[bodyId]
@@ -147,8 +214,14 @@ function Site({bodyId, site}) {
           <div class="body-details__site-resource-amount">${0}</div>
         </div>
       </div>
-      ${site.facilities.map(facility => html`<${Facility} site=${site} facility=${facility} />`)}
-      ${site.vessels.map(vessel => html`<${LandedVessel} bodyId=${bodyId} site=${site} configuration=${vessel} />`)}
+      <div class="body-details__site-facilities">
+        ${site.facilities.map(facility => html`<${Facility} site=${site} facility=${facility} />`)}
+      </div>
+      ${site.vessels.length > 0 && html`
+        <div class="body-details__site-vessels">
+          ${site.vessels.map(vessel => html`<${LandedVessel} bodyId=${bodyId} site=${site} configuration=${vessel} />`)}
+        </div>
+      `}
     </div>
   `
 }

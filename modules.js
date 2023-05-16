@@ -2,6 +2,7 @@ const currency = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, mini
 const mass = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, minimumFractionDigits: 0, style: 'unit', unit: 'kilogram' })
 const isp = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, minimumFractionDigits: 0, style: 'unit', unit: 'second' })
 const thrust = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, minimumFractionDigits: 0 })
+const speed = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, minimumFractionDigits: 0 })
 
 export const parameterDisplay = {
   thrust: {
@@ -20,11 +21,25 @@ export const parameterDisplay = {
     name: "Mass",
     format: mass.format,
   },
+  deltaV: {
+    name: "∆v",
+    format: v => speed.format(v) + " m/s",
+  },
 }
+
+const g0 = 9.80665
 
 export class Engine {
   static name = "Engine"
   get name() { return this.constructor.name }
+
+  get massFlowRate() {
+    return this.thrust / (this.isp * g0)
+  }
+
+  get exhaustVelocity() {
+    return this.isp * g0
+  }
 }
 
 export class ColdGasNozzle extends Engine {

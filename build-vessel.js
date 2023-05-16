@@ -285,6 +285,14 @@ export function BuildVessel({facility, site}) {
   const totalMass = modules.reduce((sum, m) => sum + m.mass, 0) + fuel.value
   const totalCost = modules.reduce((sum, m) => sum + m.cost, 0) + fuel.value * 100
   const vesselName = useSignal("Untitled")
+  function makeConfiguration() {
+    return new VesselConfiguration({
+      name: vesselName.value,
+      color: "lime",
+      modules,
+      resources: { volatiles: fuel.value },
+    })
+  }
   return html`
     <div class="build-vessel">
       <div class="build-vessel__title">
@@ -322,15 +330,14 @@ export function BuildVessel({facility, site}) {
               <div class="build-vessel__summary__label">Cost</div>
               <div class="build-vessel__summary__value">${parameterDisplay.cost.format(totalCost)}</div>
             </div>
+            <div class="build-vessel__summary__row">
+              <div class="build-vessel__summary__label">∆v</div>
+              <div class="build-vessel__summary__value">${parameterDisplay.deltaV.format(makeConfiguration().deltaV)}</div>
+            </div>
           </div>
           <div class="build-vessel__summary__action">
             <button disabled=${modules.length === 0} onclick=${() => {
-              site.vessels.push(new VesselConfiguration({
-                name: vesselName.value,
-                color: "lime",
-                modules,
-                resources: { volatiles: fuel.value },
-              }))
+              site.vessels.push(makeConfiguration())
 
               uiState.overlay.value = null
             }}>BUILD</button>
