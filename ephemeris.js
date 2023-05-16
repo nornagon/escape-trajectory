@@ -210,12 +210,6 @@ export class Trajectory {
     }
   }
 
-  *segments() {
-    for (let i = 1; i < this.#points.length; i++) {
-      yield [this.#points[i - 1], this.#points[i]]
-    }
-  }
-
   /**
    * @param {number} t
    */

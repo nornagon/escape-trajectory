@@ -43,6 +43,17 @@ styles.replaceSync(`
   justify-content: space-between;
 }
 
+.build-vessel__title input {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+}
+
+.build-vessel__title input:focus {
+  outline: none;
+}
+
 .build-vessel__content {
   display: flex;
   flex-direction: row;
@@ -273,10 +284,11 @@ export function BuildVessel({facility, site}) {
   const fuel = useSignal(0)
   const totalMass = modules.reduce((sum, m) => sum + m.mass, 0) + fuel.value
   const totalCost = modules.reduce((sum, m) => sum + m.cost, 0) + fuel.value * 100
+  const vesselName = useSignal("Untitled")
   return html`
     <div class="build-vessel">
       <div class="build-vessel__title">
-        VESSEL PLAN
+        <div>VESSEL PLAN: <input value=${vesselName} oninput=${e => vesselName.value = e.target.value} /></div>
         <button onClick=${() => uiState.overlay.value = null}>×</button>
       </div>
       <div class="build-vessel__content">
@@ -314,7 +326,7 @@ export function BuildVessel({facility, site}) {
           <div class="build-vessel__summary__action">
             <button disabled=${modules.length === 0} onclick=${() => {
               site.vessels.push(new VesselConfiguration({
-                name: "Untitled",
+                name: vesselName.value,
                 color: "lime",
                 modules,
                 resources: { volatiles: fuel.value },
