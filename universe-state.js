@@ -57,7 +57,7 @@ const sitesByName = {
         }
       ],
       vessels: [],
-      resources: {},
+      resources: { ore: 0, volatiles: Infinity, metals: Infinity, rareMetals: Infinity, fissionables: Infinity },
     },
   ],
 }

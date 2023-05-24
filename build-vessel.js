@@ -4,6 +4,7 @@ import { useSignal } from '@preact/signals'
 import { uiState } from './ui-store.js'
 import { moduleTypes, parameterDisplay } from './modules.js'
 import { VesselConfiguration } from './vessel.js'
+import { NumberInput } from './number-input.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -162,9 +163,12 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .build-vessel__summary {
-  padding: 8px;
   display: flex;
   flex-direction: column;
+}
+
+.build-vessel__summary > div {
+  padding: 8px;
 }
 
 .build-vessel__summary__title {
@@ -218,6 +222,34 @@ input[type="range"]::-webkit-slider-thumb {
   color: #172d29;
   cursor: not-allowed;
 }
+
+.build-vessel__load {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 3px solid #96F9FF;
+}
+
+.number-input {
+  display: inline-flex;
+  flex-direction: row;
+}
+
+.number-input input[type=number] {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  outline: none;
+  width: 6em;
+  text-align: center;
+}
+
+.number-input input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 `)
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles]
 
@@ -314,34 +346,43 @@ export function BuildVessel({facility, site}) {
               onRemove=${() => setModules((m) => splice(m, i, 1))} />`)}
         </div>
         <div class="build-vessel__summary">
-          <div class="build-vessel__summary__title">TOTAL</div>
-          <div class="build-vessel__summary__content">
-            <div class="build-vessel__summary__row">
-              <div class="build-vessel__summary__label">Fuel</div>
-              <div class="build-vessel__summary__value">
-                <input type="number" min="0" max="100" value=${fuel} oninput=${e => fuel.value = Number(e.target.value)} /> kg
+          <div class="build-vessel__load">
+            <div class="build-vessel__summary__title">LOAD</div>
+            <div class="build-vessel__summary__content">
+              <div class="build-vessel__summary__row">
+                <div class="build-vessel__summary__label">Fuel</div>
+                <div class="build-vessel__summary__value">
+                  <${NumberInput} min="0" step="100" value=${fuel} oninput=${e => fuel.value = Number(e.target.value)} /> kg
+                </div>
               </div>
             </div>
-            <div class="build-vessel__summary__row">
-              <div class="build-vessel__summary__label">Mass</div>
-              <div class="build-vessel__summary__value">${parameterDisplay.mass.format(totalMass)}</div>
-            </div>
-            <div class="build-vessel__summary__row">
-              <div class="build-vessel__summary__label">Cost</div>
-              <div class="build-vessel__summary__value">${parameterDisplay.cost.format(totalCost)}</div>
-            </div>
-            <div class="build-vessel__summary__row">
-              <div class="build-vessel__summary__label">∆v</div>
-              <div class="build-vessel__summary__value">${parameterDisplay.deltaV.format(makeConfiguration().deltaV)}</div>
+          </div>
+          <div class="build-vessel__total">
+            <div class="build-vessel__summary__title">TOTAL</div>
+            <div class="build-vessel__summary__content">
+              <div class="build-vessel__summary__row">
+                <div class="build-vessel__summary__label">Mass</div>
+                <div class="build-vessel__summary__value">${parameterDisplay.mass.format(totalMass)}</div>
+              </div>
+              <div class="build-vessel__summary__row">
+                <div class="build-vessel__summary__label">Cost</div>
+                <div class="build-vessel__summary__value">${parameterDisplay.cost.format(totalCost)}</div>
+              </div>
+              <div class="build-vessel__summary__row">
+                <div class="build-vessel__summary__label">∆v</div>
+                <div class="build-vessel__summary__value">${parameterDisplay.deltaV.format(makeConfiguration().deltaV)}</div>
+              </div>
             </div>
           </div>
-          <div class="build-vessel__summary__action">
-            <button disabled=${modules.length === 0} onclick=${() => {
-              site.vessels.push(makeConfiguration())
+          <div class="build-vessel__actions">
+            <div class="build-vessel__summary__action">
+              <button disabled=${modules.length === 0} onclick=${() => {
+                site.vessels.push(makeConfiguration())
 
-              uiState.overlay.value = null
-            }}>BUILD</button>
-          </div>
+                uiState.overlay.value = null
+              }}>BUILD</button>
+            </div>
+          </diV>
         </div>
       </div>
     </div>

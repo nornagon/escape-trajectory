@@ -45,7 +45,7 @@ let maneuverVessel = null
 
 let draggingManeuver = null
 let draggingManeuverLen = 0
-let predictionHorizon = 10 * Day
+let predictionHorizon = 1 * Day
 
 /// SETUP
 universe.prolong(predictionHorizon)

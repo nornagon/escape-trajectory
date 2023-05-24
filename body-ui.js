@@ -1,9 +1,11 @@
 import { html } from 'htm/preact'
+import { useState } from 'preact/hooks'
 import { uiState } from './ui-store.js'
 import { universe, useUniverse } from './universe-state.js'
 import { Vessel } from './vessel.js'
 import { initialOrbitState } from './ephemeris.js'
 import { parameterDisplay } from './modules.js'
+import { NumberInput } from './number-input.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -126,6 +128,17 @@ styles.replaceSync(`
   justify-content: space-between;
 }
 
+.body-details__site-resources {
+  display: flex;
+  flex-direction: column;
+}
+
+.body-details__site-resource {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
 `)
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles]
 
@@ -143,6 +156,7 @@ function Facility({site, facility}) {
 }
 
 function LandedVessel({configuration, site, bodyId}) {
+  const [, setX] = useState(null)
   return html`
     <div class="body-details__vessel">
       <div class="body-details__vessel-name">${configuration.name}</div>
@@ -154,7 +168,9 @@ function LandedVessel({configuration, site, bodyId}) {
         <div class="body-details__vessel-resources">
           <div class="body-details__vessel-resource">
             <div class="body-details__vessel-resource-name">V</div>
-            <div class="body-details__vessel-resource-amount">${parameterDisplay.mass.format(configuration.resources.volatiles)}</div>
+            <div class="body-details__vessel-resource-amount">
+              <${NumberInput} value=${configuration.resources.volatiles} oninput=${(event) => {configuration.resources.volatiles = Number(event.target.value); setX(Symbol())}} step="100" />
+            </div>
           </div>
           <div class="body-details__vessel-resource">
             <div class="body-details__vessel-resource-name">M</div>
@@ -195,23 +211,23 @@ function Site({bodyId, site}) {
       <div class="body-details__site-resources">
         <div class="body-details__site-resource">
           <div class="body-details__site-resource-name">O</div>
-          <div class="body-details__site-resource-amount">${0}</div>
+          <div class="body-details__site-resource-amount">${parameterDisplay.mass.format(site.resources.ore)}</div>
         </div>
         <div class="body-details__site-resource">
           <div class="body-details__site-resource-name">V</div>
-          <div class="body-details__site-resource-amount">${0}</div>
+          <div class="body-details__site-resource-amount">${parameterDisplay.mass.format(site.resources.volatiles)}</div>
         </div>
         <div class="body-details__site-resource">
           <div class="body-details__site-resource-name">M</div>
-          <div class="body-details__site-resource-amount">${0}</div>
+          <div class="body-details__site-resource-amount">${parameterDisplay.mass.format(site.resources.metals)}</div>
         </div>
         <div class="body-details__site-resource">
           <div class="body-details__site-resource-name">R</div>
-          <div class="body-details__site-resource-amount">${0}</div>
+          <div class="body-details__site-resource-amount">${parameterDisplay.mass.format(site.resources.rareMetals)}</div>
         </div>
         <div class="body-details__site-resource">
           <div class="body-details__site-resource-name">U</div>
-          <div class="body-details__site-resource-amount">${0}</div>
+          <div class="body-details__site-resource-amount">${parameterDisplay.mass.format(site.resources.fissionables)}</div>
         </div>
       </div>
       <div class="body-details__site-facilities">
