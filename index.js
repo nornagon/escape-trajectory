@@ -2,7 +2,7 @@ import { bbContains, closestTOnSegment, cohenSutherlandLineClip } from "./geomet
 import { InteractionContext2D, polygon } from "./canvas-util.js"
 import { BBTree, vops, lerp } from "./geometry.js"
 import { html } from 'htm/preact'
-import { render } from 'preact'
+import { render, options } from 'preact'
 import { formatDuration, map, sliding } from "./util.js"
 import { OverlayUI } from "./overlay-ui.js"
 import { uiState } from "./ui-store.js"
@@ -37,7 +37,7 @@ let zoom = 38e-6
 
 let originBodyIndex = 3
 let selectedBodyIndex = 3
-uiState.selectedBody.value = selectedBodyIndex
+uiState.selectedBody = selectedBodyIndex
 
 let trajectoryHoverPoint = null
 let currentManeuver = null
@@ -157,7 +157,7 @@ canvas.addEventListener("mousedown", event => {
         const r = Math.hypot(dx, dy)
         if (r < Math.max(10, zoom * ephemeris.bodies[i].radius)) {
           selectedBodyIndex = i
-          uiState.selectedBody.value = i
+          uiState.selectedBody = i
           if (event.detail === 2) {
             setOriginBody(i)
           }
@@ -173,7 +173,7 @@ canvas.addEventListener("mousedown", event => {
       } else {
         selectManeuver(null, null)
         selectedBodyIndex = null
-        uiState.selectedBody.value = null
+        uiState.selectedBody = null
       }
       requestDraw()
     }
@@ -909,5 +909,20 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas)
 resizeCanvas()
 
-render(html`<${OverlayUI} />`, document.querySelector('#overlay'))
+let redrawQueued = false
+function redraw() {
+  render(html`<${OverlayUI} />`, document.querySelector('#overlay'))
+  redrawQueued = false
+}
+function queueRedraw() {
+  if (!redrawQueued) {
+    redrawQueued = true
+    queueMicrotask(redraw)
+  }
+}
+options.event = (e) => {
+  queueRedraw()
+  return e
+}
+redraw()
 onUniverseChanged(requestDraw)

@@ -1,5 +1,4 @@
 import { Ephemeris } from "./ephemeris.js"
-import { useState, useEffect, useLayoutEffect } from 'preact/hooks'
 
 const celestials = [
   { name: "Sun", mass: 1.98855e30, position: {x: 0, y: 0}, velocity: {x: 0, y: 0}, radius: 695700e3, color: "#ff0" },
@@ -115,56 +114,8 @@ export const universe = {
 
 window.universe = universe
 
-/**
- * Check if two values are the same value
- * @param {*} x
- * @param {*} y
- * @returns {boolean}
- */
-export function is(x, y) {
-	return (x === y && (x !== 0 || 1 / x === 1 / y)) || (x !== x && y !== y);
-}
-
-/**
- * This is taken from https://github.com/facebook/react/blob/main/packages/use-sync-external-store/src/useSyncExternalStoreShimClient.js#L84
- * on a high level this cuts out the warnings, ... and attempts a smaller implementation
- */
-export function useSyncExternalStore(subscribe, getSnapshot) {
-	const value = getSnapshot();
-
-	const [{ _instance }, forceUpdate] = useState({
-		_instance: { _value: value, _getSnapshot: getSnapshot }
-	});
-
-	useLayoutEffect(() => {
-		_instance._value = value;
-		_instance._getSnapshot = getSnapshot;
-
-		if (!is(_instance._value, getSnapshot())) {
-			forceUpdate({ _instance });
-		}
-	}, [subscribe, value, getSnapshot]);
-
-	useEffect(() => {
-		if (!is(_instance._value, _instance._getSnapshot())) {
-			forceUpdate({ _instance });
-		}
-
-		return subscribe(() => {
-			if (!is(_instance._value, _instance._getSnapshot())) {
-				forceUpdate({ _instance });
-			}
-		});
-	}, [subscribe]);
-
-	return value;
-}
-
-// Wrapped in an object so that it's fresh whenever the universe changes.
-let currentUniverse = { universe }
 const subscribers = new Set
 export function universeChanged() {
-  currentUniverse = { universe }
   for (const listener of subscribers)
     listener()
 }
@@ -172,11 +123,4 @@ export function universeChanged() {
 export function onUniverseChanged(listener) {
   subscribers.add(listener)
   return () => subscribers.delete(listener)
-}
-
-export function useUniverse() {
-  return useSyncExternalStore(
-    onUniverseChanged,
-    () => currentUniverse,
-  ).universe
 }

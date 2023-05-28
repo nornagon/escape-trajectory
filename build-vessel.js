@@ -1,6 +1,5 @@
 import { html } from 'htm/preact'
 import { useState } from 'preact/hooks'
-import { useSignal } from '@preact/signals'
 import { uiState } from './ui-store.js'
 import { moduleTypes, parameterDisplay } from './modules.js'
 import { VesselConfiguration } from './vessel.js'
@@ -253,12 +252,6 @@ input[type=number]::-webkit-outer-spin-button {
 `)
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles]
 
-function splice(arr, ...args) {
-  const a = [...arr]
-  a.splice(...args)
-  return a
-}
-
 function LibraryModuleType({moduleType, onAdd}) {
   return html`
     <div class="library-module">
@@ -271,7 +264,7 @@ function LibraryModuleType({moduleType, onAdd}) {
   `
 }
 
-function VesselModule({module, onUpdate, onRemove}) {
+function VesselModule({module, onRemove}) {
   return html`
     <div class="vessel-module">
       <div class="vessel-module__title">
@@ -289,7 +282,6 @@ function VesselModule({module, onUpdate, onRemove}) {
                   <input type="range" min=${param.min} max=${param.max} value=${module[key]} oninput=${(e) => {
                     if (e.target.value === module[key]) return
                     module[key] = Number(e.target.value)
-                    onUpdate()
                   }} />
                   ${display.format(module[key])}
                 </div>
@@ -312,38 +304,31 @@ function VesselModule({module, onUpdate, onRemove}) {
 }
 
 export function BuildVessel({facility, site}) {
-  const [modules, setModules] = useState([])
-  const fuel = useSignal(0)
-  const totalMass = modules.reduce((sum, m) => sum + m.mass, 0) + fuel.value
-  const totalCost = modules.reduce((sum, m) => sum + m.cost, 0) + fuel.value * 100
-  const vesselName = useSignal("Untitled")
-  function makeConfiguration() {
-    return new VesselConfiguration({
-      name: vesselName.value,
-      color: "lime",
-      modules,
-      resources: { volatiles: fuel.value },
-    })
-  }
+  const [configuration] = useState(new VesselConfiguration({
+    name: "Untitled",
+    color: "lime",
+    modules: [],
+    resources: { volatiles: 0 },
+  }))
+  const totalCost = configuration.modules.reduce((sum, m) => sum + m.cost, 0) + configuration.resources.volatiles * 100
   return html`
     <div class="build-vessel">
       <div class="build-vessel__title">
-        <div>VESSEL PLAN: <input value=${vesselName} oninput=${e => vesselName.value = e.target.value} /></div>
-        <button onClick=${() => uiState.overlay.value = null}>×</button>
+        <div>VESSEL PLAN: <input value=${configuration.name} oninput=${e => configuration.name = e.target.value} /></div>
+        <button onClick=${() => uiState.overlay = null}>×</button>
       </div>
       <div class="build-vessel__content">
         <div class="build-vessel__library">
           ${moduleTypes.map(moduleType => html`
             <${LibraryModuleType}
               moduleType=${moduleType}
-              onAdd=${() => setModules((m) => [...m, new moduleType])} />`)}
+              onAdd=${() => configuration.modules.push(new moduleType)} />`)}
         </div>
         <div class="build-vessel__modules">
-          ${modules.map((module, i) => html`
+          ${configuration.modules.map((module, i) => html`
             <${VesselModule}
               module=${module}
-              onUpdate=${() => setModules(m => [...m] /* force update ... hm :/ */)}
-              onRemove=${() => setModules((m) => splice(m, i, 1))} />`)}
+              onRemove=${() => configuration.modules.splice(i, 1)} />`)}
         </div>
         <div class="build-vessel__summary">
           <div class="build-vessel__load">
@@ -352,7 +337,7 @@ export function BuildVessel({facility, site}) {
               <div class="build-vessel__summary__row">
                 <div class="build-vessel__summary__label">Fuel</div>
                 <div class="build-vessel__summary__value">
-                  <${NumberInput} min="0" step="100" value=${fuel} oninput=${e => fuel.value = Number(e.target.value)} /> kg
+                  <${NumberInput} min="0" step="100" value=${configuration.resources.volatiles} oninput=${e => configuration.resources.volatiles = Number(e.target.value)} /> kg
                 </div>
               </div>
             </div>
@@ -362,7 +347,7 @@ export function BuildVessel({facility, site}) {
             <div class="build-vessel__summary__content">
               <div class="build-vessel__summary__row">
                 <div class="build-vessel__summary__label">Mass</div>
-                <div class="build-vessel__summary__value">${parameterDisplay.mass.format(totalMass)}</div>
+                <div class="build-vessel__summary__value">${parameterDisplay.mass.format(configuration.mass)}</div>
               </div>
               <div class="build-vessel__summary__row">
                 <div class="build-vessel__summary__label">Cost</div>
@@ -370,16 +355,16 @@ export function BuildVessel({facility, site}) {
               </div>
               <div class="build-vessel__summary__row">
                 <div class="build-vessel__summary__label">∆v</div>
-                <div class="build-vessel__summary__value">${parameterDisplay.deltaV.format(makeConfiguration().deltaV)}</div>
+                <div class="build-vessel__summary__value">${parameterDisplay.deltaV.format(configuration.deltaV)}</div>
               </div>
             </div>
           </div>
           <div class="build-vessel__actions">
             <div class="build-vessel__summary__action">
-              <button disabled=${modules.length === 0} onclick=${() => {
-                site.vessels.push(makeConfiguration())
+              <button disabled=${configuration.modules.length === 0} onclick=${() => {
+                site.vessels.push(configuration)
 
-                uiState.overlay.value = null
+                uiState.overlay = null
               }}>BUILD</button>
             </div>
           </diV>

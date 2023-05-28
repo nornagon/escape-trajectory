@@ -1,7 +1,6 @@
 import { html } from 'htm/preact'
-import { useState } from 'preact/hooks'
 import { uiState } from './ui-store.js'
-import { universe, useUniverse } from './universe-state.js'
+import { universe } from './universe-state.js'
 import { Vessel } from './vessel.js'
 import { initialOrbitState } from './ephemeris.js'
 import { parameterDisplay } from './modules.js'
@@ -149,14 +148,13 @@ function Facility({site, facility}) {
     <div class="body-details__facility">
       <div class="body-details__facility-type">${facility.type}</div>
       <div class="body-details__facility-actions">
-        <button class="body-details__facility-action" onclick=${() => uiState.overlay.value = { type: "build-vessel", facility, site }}>Build</button>
+        <button class="body-details__facility-action" onclick=${() => uiState.overlay = { type: "build-vessel", facility, site }}>Build</button>
       </div>
     </div>
   `
 }
 
 function LandedVessel({configuration, site, bodyId}) {
-  const [, setX] = useState(null)
   return html`
     <div class="body-details__vessel">
       <div class="body-details__vessel-name">${configuration.name}</div>
@@ -169,7 +167,7 @@ function LandedVessel({configuration, site, bodyId}) {
           <div class="body-details__vessel-resource">
             <div class="body-details__vessel-resource-name">V</div>
             <div class="body-details__vessel-resource-amount">
-              <${NumberInput} value=${configuration.resources.volatiles} oninput=${(event) => {configuration.resources.volatiles = Number(event.target.value); setX(Symbol())}} step="100" />
+              <${NumberInput} value=${configuration.resources.volatiles} oninput=${(event) => { configuration.resources.volatiles = Number(event.target.value) }} step="100" />
             </div>
           </div>
           <div class="body-details__vessel-resource">
@@ -243,7 +241,6 @@ function Site({bodyId, site}) {
 }
 
 export function BodyDetails({bodyId}) {
-  const universe = useUniverse()
   const body = universe.ephemeris.bodies[bodyId]
   const sites = universe.sites[bodyId]
   return html`
