@@ -36,8 +36,7 @@ let pan = {x: 0, y: 0}
 let zoom = 38e-6
 
 let originBodyIndex = 3
-let selectedBodyIndex = 3
-uiState.selectedBody = selectedBodyIndex
+uiState.selectedBody = 3
 
 let trajectoryHoverPoint = null
 let currentManeuver = null
@@ -156,7 +155,6 @@ canvas.addEventListener("mousedown", event => {
         const dy = screenPos.y - event.offsetY
         const r = Math.hypot(dx, dy)
         if (r < Math.max(10, zoom * ephemeris.bodies[i].radius)) {
-          selectedBodyIndex = i
           uiState.selectedBody = i
           if (event.detail === 2) {
             setOriginBody(i)
@@ -172,7 +170,6 @@ canvas.addEventListener("mousedown", event => {
         selectManeuver(vessel, m)
       } else {
         selectManeuver(null, null)
-        selectedBodyIndex = null
         uiState.selectedBody = null
       }
       requestDraw()
@@ -596,9 +593,9 @@ function drawUI(ctx) {
     ctx.fill()
   }
 
-  if (selectedBodyIndex != null) {
-    const body = ephemeris.bodies[selectedBodyIndex]
-    const trajectory = ephemeris.trajectories[selectedBodyIndex]
+  if (uiState.selectedBody != null) {
+    const body = ephemeris.bodies[uiState.selectedBody]
+    const trajectory = ephemeris.trajectories[uiState.selectedBody]
     const bodyScreenPos = worldToScreen(trajectory.evaluatePosition(universe.currentTime))
 
     const bodyRadius = body.radius * zoom
@@ -746,6 +743,7 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
 }
 
 function draw() {
+  queueRedraw()
   const start = performance.now()
   ctx.save()
   ctx.scale(devicePixelRatio, devicePixelRatio)
@@ -792,7 +790,7 @@ function draw() {
     const diamondRadius = 10
     ctx.fillStyle = 'black'
     ctx.fillRect(screenPos.x + diamondRadius + 5, screenPos.y - metrics.actualBoundingBoxAscent - 2, metrics.width + 10, metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent + 4)
-    if (selectedBodyIndex === i) {
+    if (uiState.selectedBody === i) {
       ctx.fillStyle = 'white'
     } else {
       ctx.fillStyle = 'gray'
@@ -812,10 +810,23 @@ function draw() {
   for (const vessel of vessels) {
     const pos = vessel.trajectory.evaluatePosition(universe.currentTime)
     const screenPos = worldToScreen(pos)
-    ctx.fillStyle = vessel.color
+
+    //ctx.fillStyle = vessel.color
+    ctx.fillStyle = 'white'
     ctx.beginPath()
-    ctx.arc(screenPos.x, screenPos.y, 2, 0, 2 * Math.PI)
+    //ctx.arc(screenPos.x, screenPos.y, 2, 0, 2 * Math.PI)
+    // square centered on the vessel
+    // round to the nearest pixel to avoid aliasing
+    const r = 8
+    ctx.rect(Math.round(screenPos.x - r), Math.round(screenPos.y - r), r * 2, r * 2)
     ctx.fill()
+    // outline square
+    const r2 = r + 4
+    ctx.strokeStyle = 'white'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.rect(Math.round(screenPos.x - r2) + 0.5, Math.round(screenPos.y - r2) + 0.5, r2 * 2 - 1, r2 * 2 - 1)
+    ctx.stroke()
   }
 
   ctx.restore()
