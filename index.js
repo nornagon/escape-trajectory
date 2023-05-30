@@ -89,7 +89,7 @@ function findNearestTrajectory(screenPos) {
   let closestI = -1
   vessels.forEach((vessel, i) => {
     // Find the closestPointpoint on |trajectory|
-    for (const [a, b] of vessel.trajectory.segments()) {
+    for (const [a, b] of sliding(vessel.trajectory.points(), 2)) {
       const aScreenPos = worldToScreen(a.position, a.time)
       const bScreenPos = worldToScreen(b.position, b.time)
       const t = closestTOnSegment(aScreenPos, bScreenPos, screenPos)
