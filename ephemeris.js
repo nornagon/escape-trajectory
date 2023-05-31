@@ -190,7 +190,7 @@ export class Trajectory {
   #points = []
   constructor(initial) {
     if (initial)
-      this.#points.push({time: initial.time ?? 0, position: initial.position, velocity: initial.velocity})
+      this.#points = initial
   }
 
   append(time, position, velocity) {
@@ -287,7 +287,7 @@ export class Ephemeris {
     this.#bodies = bodies
     this.#step = step
     this.#trajectories = initialState.map((dof) => {
-      return new Trajectory(dof)
+      return new Trajectory([{...dof, time: 0}])
     })
   }
 

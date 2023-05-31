@@ -34,47 +34,55 @@ const celestials = [
   { name: "Ceres", mass: 9.393e20, position: {x: 4.14e11, y: 0}, velocity: {x: 0, y: 17.9e3}, radius: 469.73e3, color: "#f0f" },
 ]
 
-const bodies = celestials.map(c => ({
-  name: c.name,
-  mass: c.mass,
-  radius: c.radius,
-  color: c.color,
-}))
+function blankUniverse() {
+  const bodies = celestials.map(c => ({
+    name: c.name,
+    mass: c.mass,
+    radius: c.radius,
+    color: c.color,
+  }))
 
-const bodyInitialStates = celestials.map(c => ({
-  position: c.position,
-  velocity: c.velocity,
-}))
+  const bodyInitialStates = celestials.map(c => ({
+    position: c.position,
+    velocity: c.velocity,
+  }))
 
-const sitesByName = {
-  Earth: [
-    {
-      name: "KSC",
-      facilities: [
-        {
-          type: "manufactory",
-        }
-      ],
-      vessels: [],
-      resources: { ore: 0, volatiles: Infinity, metals: Infinity, rareMetals: Infinity, fissionables: Infinity },
-    },
-  ],
+  const sitesByName = {
+    Earth: [
+      {
+        name: "KSC",
+        facilities: [
+          {
+            type: "manufactory",
+          }
+        ],
+        vessels: [],
+        resources: { ore: 0, volatiles: Infinity, metals: Infinity, rareMetals: Infinity, fissionables: Infinity },
+      },
+    ],
+  }
+  const sites = bodies.map(b => sitesByName[b.name] || [])
+
+  const u = new Universe(bodies, bodyInitialStates)
+  u.sites = sites
+  return u
 }
-const sites = bodies.map(b => sitesByName[b.name] || [])
 
-/** @type {Array<import('./vessel.js').Vessel>} */
-const vessels = []
+class Universe {
+  currentTime = 0
+  tMax = 0
+  sites = []
+  /** @type {Array<import('./vessel.js').Vessel>} */
+  vessels = []
 
-export const universe = {
-  currentTime: 0,
-  tMax: 0,
-  ephemeris: new Ephemeris({
-    bodies,
-    initialState: bodyInitialStates,
-    step: 1 * 60,
-  }),
-  sites,
-  vessels,
+  constructor(bodies, bodyInitialStates) {
+    this.ephemeris = new Ephemeris({
+      bodies,
+      initialState: bodyInitialStates,
+      step: 1 * 60,
+    })
+  }
+
   prolong(tMax) {
     let anyChanged = tMax !== this.tMax
     this.tMax = tMax
@@ -100,17 +108,19 @@ export const universe = {
     })
     if (anyChanged)
       universeChanged()
-  },
+  }
   limit(tMax) {
     if (tMax >= this.tMax)
       throw new Error("Can't limit to a time in the future")
     this.tMax = tMax
     universeChanged()
-  },
+  }
   recompute() {
     this.prolong(this.tMax)
-  },
+  }
 }
+
+export const universe = blankUniverse()
 
 window.universe = universe
 

@@ -21,11 +21,11 @@ export class Maneuver {
    *
    * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, initialMass: number}} param0
    */
-  constructor({ vessel, startTime, referenceTrajectory, initialMass }) {
+  constructor({ vessel, startTime, referenceTrajectory, initialMass, duration = 0, direction = {x: 0, y: 0} }) {
     this.#vessel = vessel
     this.#startTime = startTime
-    this.#duration = 0
-    this.#direction = {x: 0, y: 0}
+    this.#duration = duration
+    this.#direction = direction
     this.#referenceTrajectory = referenceTrajectory
     this.#initialMass = initialMass
   }
@@ -70,10 +70,11 @@ export class Vessel {
   #configuration
   #trajectory
   /** @type {Array<Maneuver>} */
-  #maneuvers = []
-  constructor({ configuration, initialState }) {
+  #maneuvers
+  constructor({ configuration, trajectory, maneuvers, initialState }) {
     this.#configuration = configuration
-    this.#trajectory = new Trajectory(initialState)
+    this.#trajectory = trajectory ?? new Trajectory([initialState])
+    this.#maneuvers = maneuvers ?? []
   }
 
   get name() { return this.#configuration.name }
