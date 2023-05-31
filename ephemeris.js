@@ -190,7 +190,7 @@ export class Trajectory {
   #points = []
   constructor(initial) {
     if (initial)
-      this.#points.push({time: 0, position: initial.position, velocity: initial.velocity})
+      this.#points.push({time: initial.time ?? 0, position: initial.position, velocity: initial.velocity})
   }
 
   append(time, position, velocity) {

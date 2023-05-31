@@ -36,7 +36,7 @@ let pan = {x: 0, y: 0}
 let zoom = 38e-6
 
 let originBodyIndex = 3
-uiState.selectedBody = 3
+uiState.selection = { type: 'body', index: 3 }
 
 let trajectoryHoverPoint = null
 let currentManeuver = null
@@ -155,7 +155,7 @@ canvas.addEventListener("mousedown", event => {
         const dy = screenPos.y - event.offsetY
         const r = Math.hypot(dx, dy)
         if (r < Math.max(10, zoom * ephemeris.bodies[i].radius)) {
-          uiState.selectedBody = i
+          selectBody(i)
           if (event.detail === 2) {
             setOriginBody(i)
           }
@@ -169,8 +169,11 @@ canvas.addEventListener("mousedown", event => {
         const m = vessel.addManeuver(point.t, ephemeris.trajectories[originBodyIndex])
         selectManeuver(vessel, m)
       } else {
-        selectManeuver(null, null)
-        uiState.selectedBody = null
+        if (currentManeuver) {
+          selectManeuver(null, null)
+        } else {
+          clearSelection()
+        }
       }
       requestDraw()
     }
@@ -359,6 +362,24 @@ function adjustManeuver() {
   requestAnimationFrame(adjustManeuver)
 }
 
+function selectVessel(i) {
+  clearSelection()
+  uiState.selection = { type: 'vessel', index: i }
+  requestDraw()
+}
+
+function selectBody(i) {
+  clearSelection()
+  uiState.selection = { type: 'body', index: i }
+  requestDraw()
+}
+
+function clearSelection() {
+  uiState.selection = null
+  selectManeuver(null, null)
+  requestDraw()
+}
+
 function selectManeuver(vessel, maneuver) {
   if (currentManeuver?.duration === 0) {
     maneuverVessel.removeManeuver(currentManeuver)
@@ -380,10 +401,37 @@ function setOriginBody(i) {
  * @param {CanvasRenderingContext2D} ctx
  */
 function drawUI(ctx) {
-  for (const vessel of vessels) {
+  vessels.forEach((vessel, i) => {
+    const selected = uiState.selection?.type === 'vessel' && uiState.selection.index === i
+    const pos = vessel.trajectory.evaluatePosition(universe.currentTime)
+    const screenPos = worldToScreen(pos)
+
+    ctx.fillStyle = selected ? 'white' : 'lightgray'
+    ctx.beginPath()
+    const r = 8
+    ctx.rect(Math.round(screenPos.x - r), Math.round(screenPos.y - r), r * 2, r * 2)
+    ctx.fill()
+    ctx.on?.('mousedown', (e) => {
+      if (e.button === 0) {
+        selectVessel(i)
+        requestDraw()
+      }
+    })
+    if (selected) {
+      const r2 = r + 4
+      ctx.strokeStyle = 'white'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.rect(Math.round(screenPos.x - r2) + 0.5, Math.round(screenPos.y - r2) + 0.5, r2 * 2 - 1, r2 * 2 - 1)
+      ctx.stroke()
+    }
+  })
+
+  const selectedVessel = uiState.selection?.type === 'vessel' ? vessels[uiState.selection.index] : null
+  if (selectedVessel) {
     // Draw maneuver indicators.
-    for (const maneuver of vessel.maneuvers) {
-      const q = vessel.trajectory.evaluatePosition(maneuver.startTime)
+    for (const maneuver of selectedVessel.maneuvers) {
+      const q = selectedVessel.trajectory.evaluatePosition(maneuver.startTime)
       const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(maneuver.startTime)
       const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
 
@@ -398,204 +446,202 @@ function drawUI(ctx) {
         ctx.fill()
         ctx.on?.('mousedown', (e) => {
           if (e.button === 0)
-            selectManeuver(vessel, maneuver)
+            selectManeuver(selectedVessel, maneuver)
           if (e.button === 2 && maneuver.startTime >= universe.currentTime) {
-            vessel.removeManeuver(maneuver)
-            vessel.trajectory.forgetAfter(maneuver.startTime)
+            selectedVessel.removeManeuver(maneuver)
+            selectedVessel.trajectory.forgetAfter(maneuver.startTime)
             universe.recompute()
-            trajectoryBBTrees.delete(vessel.trajectory)
+            trajectoryBBTrees.delete(selectedVessel.trajectory)
           }
         })
       }
     }
-  }
-  if (currentManeuver) {
-    const vessel = maneuverVessel
-    const q = vessel.trajectory.evaluatePosition(currentManeuver.startTime)
-    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(currentManeuver.startTime)
-    const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
+    if (currentManeuver) {
+      const q = selectedVessel.trajectory.evaluatePosition(currentManeuver.startTime)
+      const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(currentManeuver.startTime)
+      const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
 
-    ctx.strokeStyle = 'lightblue'
-    ctx.fillStyle = 'black'
-    ctx.lineWidth = 3
-    ctx.beginPath()
-    ctx.arc(screenPos.x, screenPos.y, 10, 0, 2 * Math.PI)
-    ctx.fill()
-    ctx.stroke()
-
-    ctx.on?.('mousedown', (e) => {
-      draggingManeuver = { time: {
-        initialPoint: {x: e.offsetX, y: e.offsetY},
-      }, prograde: 0, radial: 0 }
-      draggingManeuverLen = 0
-      adjustManeuver()
-    })
-
-    if (currentManeuver.startTime >= universe.currentTime) {
-      ctx.fillStyle = 'white'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'top'
-      ctx.font = '18px Martian Mono'
-      ctx.fillText('T–' + formatDuration(currentManeuver.startTime - universe.currentTime), screenPos.x, screenPos.y + 20)
-    }
-
-    const prograde = currentManeuver.prograde
-    const radial = vperp(prograde)
-    const progradeLen = draggingManeuver?.prograde === 1 ? draggingManeuverLen : 80
-    const retrogradeLen = draggingManeuver?.prograde === -1 ? draggingManeuverLen : 80
-    const radialLen = draggingManeuver?.radial === 1 ? draggingManeuverLen : 80
-    const antiRadialLen = draggingManeuver?.radial === -1 ? draggingManeuverLen : 80
-    ctx.beginPath()
-    ctx.moveTo(screenPos.x + prograde.x * 10, screenPos.y + prograde.y * 10)
-    ctx.lineTo(
-      screenPos.x + prograde.x * (progradeLen - 15),
-      screenPos.y + prograde.y * (progradeLen - 15)
-    )
-    ctx.moveTo(screenPos.x + -prograde.x * 10, screenPos.y + -prograde.y * 10)
-    ctx.lineTo(
-      screenPos.x + -prograde.x * (retrogradeLen - 15),
-      screenPos.y + -prograde.y * (retrogradeLen - 15)
-    )
-    ctx.moveTo(screenPos.x + radial.x * 10, screenPos.y + radial.y * 10)
-    ctx.lineTo(
-      screenPos.x + radial.x * radialLen,
-      screenPos.y + radial.y * radialLen
-    )
-    ctx.moveTo(screenPos.x + -radial.x * 10, screenPos.y + -radial.y * 10)
-    ctx.lineTo(
-      screenPos.x + -radial.x * antiRadialLen,
-      screenPos.y + -radial.y * antiRadialLen
-    )
-    ctx.stroke()
-
-    ctx.strokeStyle = 'chartreuse'
-    ctx.fillStyle = 'chartreuse'
-    {
-      const center = vadd(screenPos, vscale(prograde, progradeLen))
-
+      ctx.strokeStyle = 'lightblue'
+      ctx.fillStyle = 'black'
+      ctx.lineWidth = 3
       ctx.beginPath()
-      ctx.arc(center.x, center.y, 10, 0, 2 * Math.PI)
-      ctx.moveTo(center.x, center.y - 10)
-      ctx.lineTo(center.x, center.y - 20)
-      ctx.moveTo(center.x - 10, center.y)
-      ctx.lineTo(center.x - 20, center.y)
-      ctx.moveTo(center.x + 10, center.y)
-      ctx.lineTo(center.x + 20, center.y)
+      ctx.arc(screenPos.x, screenPos.y, 10, 0, 2 * Math.PI)
+      ctx.fill()
       ctx.stroke()
 
+      ctx.on?.('mousedown', (e) => {
+        draggingManeuver = { time: {
+          initialPoint: {x: e.offsetX, y: e.offsetY},
+        }, prograde: 0, radial: 0 }
+        draggingManeuverLen = 0
+        adjustManeuver()
+      })
+
+      if (currentManeuver.startTime >= universe.currentTime) {
+        ctx.fillStyle = 'white'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+        ctx.font = '18px Martian Mono'
+        ctx.fillText('T–' + formatDuration(currentManeuver.startTime - universe.currentTime), screenPos.x, screenPos.y + 20)
+      }
+
+      const prograde = currentManeuver.prograde
+      const radial = vperp(prograde)
+      const progradeLen = draggingManeuver?.prograde === 1 ? draggingManeuverLen : 80
+      const retrogradeLen = draggingManeuver?.prograde === -1 ? draggingManeuverLen : 80
+      const radialLen = draggingManeuver?.radial === 1 ? draggingManeuverLen : 80
+      const antiRadialLen = draggingManeuver?.radial === -1 ? draggingManeuverLen : 80
+      ctx.beginPath()
+      ctx.moveTo(screenPos.x + prograde.x * 10, screenPos.y + prograde.y * 10)
+      ctx.lineTo(
+        screenPos.x + prograde.x * (progradeLen - 15),
+        screenPos.y + prograde.y * (progradeLen - 15)
+      )
+      ctx.moveTo(screenPos.x + -prograde.x * 10, screenPos.y + -prograde.y * 10)
+      ctx.lineTo(
+        screenPos.x + -prograde.x * (retrogradeLen - 15),
+        screenPos.y + -prograde.y * (retrogradeLen - 15)
+      )
+      ctx.moveTo(screenPos.x + radial.x * 10, screenPos.y + radial.y * 10)
+      ctx.lineTo(
+        screenPos.x + radial.x * radialLen,
+        screenPos.y + radial.y * radialLen
+      )
+      ctx.moveTo(screenPos.x + -radial.x * 10, screenPos.y + -radial.y * 10)
+      ctx.lineTo(
+        screenPos.x + -radial.x * antiRadialLen,
+        screenPos.y + -radial.y * antiRadialLen
+      )
+      ctx.stroke()
+
+      ctx.strokeStyle = 'chartreuse'
+      ctx.fillStyle = 'chartreuse'
+      {
+        const center = vadd(screenPos, vscale(prograde, progradeLen))
+
+        ctx.beginPath()
+        ctx.arc(center.x, center.y, 10, 0, 2 * Math.PI)
+        ctx.moveTo(center.x, center.y - 10)
+        ctx.lineTo(center.x, center.y - 20)
+        ctx.moveTo(center.x - 10, center.y)
+        ctx.lineTo(center.x - 20, center.y)
+        ctx.moveTo(center.x + 10, center.y)
+        ctx.lineTo(center.x + 20, center.y)
+        ctx.stroke()
+
+        ctx.on?.('mousedown', () => {
+          draggingManeuver = { prograde: 1, radial: 0 };
+          draggingManeuverLen = 80
+          adjustManeuver()
+        })
+
+        ctx.beginPath()
+        ctx.arc(center.x, center.y, 2, 0, 2 * Math.PI)
+        ctx.fill()
+      }
+
+      {
+        const center = vadd(screenPos, vscale(prograde, -retrogradeLen))
+
+        ctx.beginPath()
+        ctx.arc(center.x, center.y, 10, 0, 2 * Math.PI)
+        ctx.moveTo(center.x, center.y - 10)
+        ctx.lineTo(center.x, center.y - 20)
+        {
+          const aDir = {
+            x: Math.cos(Math.PI * 1/3 + Math.PI/2),
+            y: Math.sin(Math.PI * 1/3 + Math.PI/2)
+          }
+          ctx.moveTo(center.x + aDir.x * 10, center.y + aDir.y * 10)
+          ctx.lineTo(center.x + aDir.x * 20, center.y + aDir.y * 20)
+        }
+        {
+          const bDir = {
+            x: Math.cos(-Math.PI * 1/3 + Math.PI/2),
+            y: Math.sin(-Math.PI * 1/3 + Math.PI/2)
+          }
+          ctx.moveTo(center.x + bDir.x * 10, center.y + bDir.y * 10)
+          ctx.lineTo(center.x + bDir.x * 20, center.y + bDir.y * 20)
+        }
+        ctx.stroke()
+
+        ctx.on?.('mousedown', () => {
+          draggingManeuver = { prograde: -1, radial: 0 };
+          draggingManeuverLen = 80
+          adjustManeuver()
+        })
+
+        ctx.lineWidth = 1
+        const dir = {
+          x: Math.cos(Math.PI / 4),
+          y: Math.sin(Math.PI / 4)
+        }
+        ctx.beginPath()
+        ctx.moveTo(center.x - dir.x * 10, center.y - dir.y * 10)
+        ctx.lineTo(center.x + dir.x * 10, center.y + dir.y * 10)
+        ctx.moveTo(center.x - dir.x * 10, center.y + dir.y * 10)
+        ctx.lineTo(center.x + dir.x * 10, center.y - dir.y * 10)
+        ctx.stroke()
+      }
+
+      ctx.lineWidth = 2
+      ctx.strokeStyle = 'black'
+      ctx.fillStyle = '#00d7d6'
+      polygon(ctx, vadd(screenPos, vscale(radial, radialLen)), 4, 10, Math.PI / 2)
+      ctx.stroke()
+      ctx.fill()
       ctx.on?.('mousedown', () => {
-        draggingManeuver = { prograde: 1, radial: 0 };
+        draggingManeuver = { prograde: 0, radial: 1 };
         draggingManeuverLen = 80
         adjustManeuver()
       })
 
+      polygon(ctx, vadd(screenPos, vscale(radial, -antiRadialLen)), 4, 10, -Math.PI / 2)
+      ctx.stroke()
+      ctx.fill()
+      ctx.on?.('mousedown', () => {
+        draggingManeuver = { prograde: 0, radial: -1 };
+        draggingManeuverLen = 80
+        adjustManeuver()
+      })
+
+      if (draggingManeuver && ctx.on) {
+        ctx.beginPath()
+        ctx.rect(0, 0, width, height)
+        ctx.on?.('mousemove', (e) => {
+          if (draggingManeuver.time) {
+            draggingManeuverLen = Math.min(70, Math.max(-70, e.x - draggingManeuver.time.initialPoint.x))
+          } else {
+            const prograde = currentManeuver.prograde
+            const radial = vperp(prograde)
+            const vec = vadd(
+              vscale(prograde, draggingManeuver.prograde),
+              vscale(radial, draggingManeuver.radial)
+            )
+            const a = vdot(vsub(e, screenPos), vec)
+            draggingManeuverLen = Math.min(150, Math.max(10, a))
+          }
+        })
+        ctx.on?.('mouseup', () => {
+          draggingManeuver = null
+          draggingManeuverLen = 0
+        })
+      }
+    } else if (trajectoryHoverPoint) {
+      const q = selectedVessel.trajectory.evaluatePosition(trajectoryHoverPoint.t)
+      const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryHoverPoint.t)
+      const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
+
+      ctx.fillStyle = 'lightblue'
       ctx.beginPath()
-      ctx.arc(center.x, center.y, 2, 0, 2 * Math.PI)
+      ctx.arc(screenPos.x, screenPos.y, 5, 0, 2 * Math.PI)
       ctx.fill()
     }
-
-    {
-      const center = vadd(screenPos, vscale(prograde, -retrogradeLen))
-
-      ctx.beginPath()
-      ctx.arc(center.x, center.y, 10, 0, 2 * Math.PI)
-      ctx.moveTo(center.x, center.y - 10)
-      ctx.lineTo(center.x, center.y - 20)
-      {
-        const aDir = {
-          x: Math.cos(Math.PI * 1/3 + Math.PI/2),
-          y: Math.sin(Math.PI * 1/3 + Math.PI/2)
-        }
-        ctx.moveTo(center.x + aDir.x * 10, center.y + aDir.y * 10)
-        ctx.lineTo(center.x + aDir.x * 20, center.y + aDir.y * 20)
-      }
-      {
-        const bDir = {
-          x: Math.cos(-Math.PI * 1/3 + Math.PI/2),
-          y: Math.sin(-Math.PI * 1/3 + Math.PI/2)
-        }
-        ctx.moveTo(center.x + bDir.x * 10, center.y + bDir.y * 10)
-        ctx.lineTo(center.x + bDir.x * 20, center.y + bDir.y * 20)
-      }
-      ctx.stroke()
-
-      ctx.on?.('mousedown', () => {
-        draggingManeuver = { prograde: -1, radial: 0 };
-        draggingManeuverLen = 80
-        adjustManeuver()
-      })
-
-      ctx.lineWidth = 1
-      const dir = {
-        x: Math.cos(Math.PI / 4),
-        y: Math.sin(Math.PI / 4)
-      }
-      ctx.beginPath()
-      ctx.moveTo(center.x - dir.x * 10, center.y - dir.y * 10)
-      ctx.lineTo(center.x + dir.x * 10, center.y + dir.y * 10)
-      ctx.moveTo(center.x - dir.x * 10, center.y + dir.y * 10)
-      ctx.lineTo(center.x + dir.x * 10, center.y - dir.y * 10)
-      ctx.stroke()
-    }
-
-    ctx.lineWidth = 2
-    ctx.strokeStyle = 'black'
-    ctx.fillStyle = '#00d7d6'
-    polygon(ctx, vadd(screenPos, vscale(radial, radialLen)), 4, 10, Math.PI / 2)
-    ctx.stroke()
-    ctx.fill()
-    ctx.on?.('mousedown', () => {
-      draggingManeuver = { prograde: 0, radial: 1 };
-      draggingManeuverLen = 80
-      adjustManeuver()
-    })
-
-    polygon(ctx, vadd(screenPos, vscale(radial, -antiRadialLen)), 4, 10, -Math.PI / 2)
-    ctx.stroke()
-    ctx.fill()
-    ctx.on?.('mousedown', () => {
-      draggingManeuver = { prograde: 0, radial: -1 };
-      draggingManeuverLen = 80
-      adjustManeuver()
-    })
-
-    if (draggingManeuver && ctx.on) {
-      ctx.beginPath()
-      ctx.rect(0, 0, width, height)
-      ctx.on?.('mousemove', (e) => {
-        if (draggingManeuver.time) {
-          draggingManeuverLen = Math.min(70, Math.max(-70, e.x - draggingManeuver.time.initialPoint.x))
-        } else {
-          const prograde = currentManeuver.prograde
-          const radial = vperp(prograde)
-          const vec = vadd(
-            vscale(prograde, draggingManeuver.prograde),
-            vscale(radial, draggingManeuver.radial)
-          )
-          const a = vdot(vsub(e, screenPos), vec)
-          draggingManeuverLen = Math.min(150, Math.max(10, a))
-        }
-      })
-      ctx.on?.('mouseup', () => {
-        draggingManeuver = null
-        draggingManeuverLen = 0
-      })
-    }
-  } else if (trajectoryHoverPoint) {
-    const vessel = vessels[trajectoryHoverPoint.i]
-    const q = vessel.trajectory.evaluatePosition(trajectoryHoverPoint.t)
-    const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryHoverPoint.t)
-    const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
-
-    ctx.fillStyle = 'lightblue'
-    ctx.beginPath()
-    ctx.arc(screenPos.x, screenPos.y, 5, 0, 2 * Math.PI)
-    ctx.fill()
   }
 
-  if (uiState.selectedBody != null) {
-    const body = ephemeris.bodies[uiState.selectedBody]
-    const trajectory = ephemeris.trajectories[uiState.selectedBody]
+  if (uiState.selection?.type === 'body') {
+    const body = ephemeris.bodies[uiState.selection.index]
+    const trajectory = ephemeris.trajectories[uiState.selection.index]
     const bodyScreenPos = worldToScreen(trajectory.evaluatePosition(universe.currentTime))
 
     const bodyRadius = body.radius * zoom
@@ -686,7 +732,7 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
   ctx.restore()
 }
 
-function drawTrajectory(ctx, trajectory, t0 = 0) {
+function drawTrajectory(ctx, trajectory, selected = false, t0 = 0) {
   const bbtree = bbTreeForTrajectory(trajectory)
   const displayBB = {
     minX: (-width / 2 - pan.x) / zoom,
@@ -725,13 +771,19 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
   ctx.lineJoin = 'round'
 
   // Past
+  /*
   makeTrajectoryPath(ctx, trajectory, 0, universe.currentTime)
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
   ctx.stroke()
+  */
 
   // Future
   makeTrajectoryPath(ctx, trajectory, universe.currentTime, Math.min(universe.tMax, trajectory.tMax))
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+  if (selected) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+  } else {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
+  }
   ctx.stroke()
 
   let debugShowTrajectoryPoints = false
@@ -740,6 +792,59 @@ function drawTrajectory(ctx, trajectory, t0 = 0) {
     ctx.fillStyle = 'lightgreen'
     ctx.fill()
   }
+}
+
+/**
+ *
+ * @param {*} ctx
+ * @param {typeof universe.vessels[0]} vessel
+ * @param {*} selected
+ * @param {*} t0
+ * @returns
+ */
+function drawVesselTrajectory(ctx, vessel, selected = false, t0 = 0) {
+  const bbtree = bbTreeForTrajectory(vessel.trajectory)
+  const displayBB = {
+    minX: (-width / 2 - pan.x) / zoom,
+    minY: (-height / 2 - pan.y) / zoom,
+    maxX: (width / 2 - pan.x) / zoom,
+    maxY: (height / 2 - pan.y) / zoom,
+    minT: t0,
+    maxT: Infinity
+  }
+  let firstSegment = bbtree.queryFirst(displayBB)
+  if (!firstSegment) return
+
+  ctx.lineWidth = 2
+  ctx.lineJoin = 'round'
+
+  // Past
+  /*
+  makeTrajectoryPath(ctx, trajectory, 0, universe.currentTime)
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
+  ctx.stroke()
+  */
+
+  // Future
+  let t = Math.max(t0, universe.currentTime)
+  for (const maneuver of vessel.maneuvers) {
+    if (maneuver.startTime >= t) {
+      // Coast up to the maneuver start time
+      makeTrajectoryPath(ctx, vessel.trajectory, t, maneuver.startTime)
+      ctx.strokeStyle = selected ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.4)'
+      ctx.stroke()
+
+      // Draw the maneuver
+      makeTrajectoryPath(ctx, vessel.trajectory, maneuver.startTime, maneuver.endTime)
+      ctx.strokeStyle = selected ? 'rgba(255, 128, 128, 0.8)' : 'rgba(255, 128, 128, 0.4)'
+      ctx.stroke()
+      t = maneuver.endTime
+    }
+  }
+  // Coast until tMax
+  makeTrajectoryPath(ctx, vessel.trajectory, t, Math.min(universe.tMax, vessel.trajectory.tMax))
+  ctx.strokeStyle = selected ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.4)'
+  ctx.stroke()
 }
 
 function draw() {
@@ -754,11 +859,12 @@ function draw() {
   ctx.lineWidth = 1
 
   const tMax = universe.tMax
-  for (const trajectory of ephemeris.trajectories) {
-    const idx = ephemeris.trajectories.indexOf(trajectory)
-    if (idx === originBodyIndex) continue
-    drawTrajectory(ctx, trajectory)
-  }
+  ephemeris.trajectories.forEach((trajectory, i) => {
+    if (i !== originBodyIndex) {
+      const selected = uiState.selection?.type === 'body' && uiState.selection.index === i
+      drawTrajectory(ctx, trajectory, selected)
+    }
+  })
 
   // Draw bodies
   for (let i = ephemeris.bodies.length - 1; i >= 0; i--) {
@@ -790,7 +896,7 @@ function draw() {
     const diamondRadius = 10
     ctx.fillStyle = 'black'
     ctx.fillRect(screenPos.x + diamondRadius + 5, screenPos.y - metrics.actualBoundingBoxAscent - 2, metrics.width + 10, metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent + 4)
-    if (uiState.selectedBody === i) {
+    if (uiState.selection?.type === 'body' && uiState.selection.index === i) {
       ctx.fillStyle = 'white'
     } else {
       ctx.fillStyle = 'gray'
@@ -802,33 +908,10 @@ function draw() {
   }
 
   // Draw vessel trajectories
-  for (const vessel of vessels) {
-    drawTrajectory(ctx, vessel.trajectory)
-  }
-
-  // Draw vessel
-  for (const vessel of vessels) {
-    const pos = vessel.trajectory.evaluatePosition(universe.currentTime)
-    const screenPos = worldToScreen(pos)
-
-    //ctx.fillStyle = vessel.color
-    ctx.fillStyle = 'white'
-    ctx.beginPath()
-    //ctx.arc(screenPos.x, screenPos.y, 2, 0, 2 * Math.PI)
-    // square centered on the vessel
-    // round to the nearest pixel to avoid aliasing
-    const r = 8
-    ctx.rect(Math.round(screenPos.x - r), Math.round(screenPos.y - r), r * 2, r * 2)
-    ctx.fill()
-    // outline square
-    const r2 = r + 4
-    ctx.strokeStyle = 'white'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.rect(Math.round(screenPos.x - r2) + 0.5, Math.round(screenPos.y - r2) + 0.5, r2 * 2 - 1, r2 * 2 - 1)
-    ctx.stroke()
-  }
-
+  vessels.forEach((vessel, i) => {
+    const selected = uiState.selection?.type === 'vessel' && uiState.selection.index === i
+    drawVesselTrajectory(ctx, vessel, selected)
+  })
   ctx.restore()
 
   ctx.save()

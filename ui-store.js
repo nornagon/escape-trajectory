@@ -1,4 +1,4 @@
 export const uiState = {
-  selectedBody: null,
+  selection: null,
   overlay: null,
 }

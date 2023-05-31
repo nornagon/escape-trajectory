@@ -29,9 +29,16 @@ export const parameterDisplay = {
 
 const g0 = 9.80665
 
-export class Engine {
-  static name = "Engine"
+export class Module {
+  static name = "Module"
+  static description = "Part of a spaceship."
+
   get name() { return this.constructor.name }
+  get description() { return this.constructor.description }
+}
+
+export class Engine extends Module {
+  static name = "Engine"
 
   get massFlowRate() {
     return this.thrust / (this.isp * g0)

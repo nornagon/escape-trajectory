@@ -66,6 +66,7 @@ export class Maneuver {
  * Represents a vessel in flight.
  */
 export class Vessel {
+  /** @type {VesselConfiguration} */
   #configuration
   #trajectory
   /** @type {Array<Maneuver>} */
@@ -129,6 +130,7 @@ export class VesselConfiguration {
   }
 
   get name() { return this.#name }
+  set name(name) { this.#name = name }
   get color() { return this.#color }
   get modules() { return this.#modules }
   get resources() { return this.#resources }

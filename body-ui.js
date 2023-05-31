@@ -163,6 +163,10 @@ function LandedVessel({configuration, site, bodyId}) {
           <div class="body-details__vessel-detail-label">Mass</div>
           <div class="body-details__vessel-detail-value">${parameterDisplay.mass.format(configuration.mass)}</div>
         </div>
+        <div class="body-details__vessel-detail">
+          <div class="body-details__vessel-detail-label">∆v</div>
+          <div class="body-details__vessel-detail-value">${parameterDisplay.deltaV.format(configuration.deltaV)}</div>
+        </div>
         <div class="body-details__vessel-resources">
           <div class="body-details__vessel-resource">
             <div class="body-details__vessel-resource-name">V</div>
@@ -193,8 +197,9 @@ function LandedVessel({configuration, site, bodyId}) {
             velocity: bodyTrajectory.evaluateVelocity(universe.currentTime),
             mass: body.mass,
           }
-          universe.vessels.push(new Vessel({configuration, initialState: initialOrbitState(bodyState, 200e3 + body.radius)}))
+          universe.vessels.push(new Vessel({configuration, initialState: {...initialOrbitState(bodyState, 200e3 + body.radius), time: universe.currentTime}}))
           site.vessels.splice(site.vessels.indexOf(configuration), 1)
+          uiState.selection = { type: 'vessel', index: universe.vessels.length - 1 }
           universe.recompute()
         }}>Launch</button>
       </div>
