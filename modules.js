@@ -35,6 +35,21 @@ export class Module {
 
   get name() { return this.constructor.name }
   get description() { return this.constructor.description }
+
+  serialize() {
+    return {
+      type: this.constructor.name,
+      props: this
+    }
+  }
+
+  static createEmpty({type}) {
+    const cls = moduleTypes.find(cls => cls.name === type)
+    return new cls
+  }
+  deserialize({ props }) {
+    Object.assign(this, props)
+  }
 }
 
 export class Engine extends Module {

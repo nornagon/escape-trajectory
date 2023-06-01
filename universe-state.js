@@ -1,4 +1,6 @@
 import { Ephemeris } from "./ephemeris.js"
+import { deserialize, serialize } from "./serialization.js"
+import { Vessel, VesselConfiguration } from "./vessel.js"
 
 const celestials = [
   { name: "Sun", mass: 1.98855e30, position: {x: 0, y: 0}, velocity: {x: 0, y: 0}, radius: 695700e3, color: "#ff0" },
@@ -49,7 +51,7 @@ function blankUniverse() {
 
   const sitesByName = {
     Earth: [
-      {
+      Site.create({
         name: "KSC",
         facilities: [
           {
@@ -58,28 +60,89 @@ function blankUniverse() {
         ],
         vessels: [],
         resources: { ore: 0, volatiles: Infinity, metals: Infinity, rareMetals: Infinity, fissionables: Infinity },
-      },
+      }),
     ],
   }
   const sites = bodies.map(b => sitesByName[b.name] || [])
 
-  const u = new Universe(bodies, bodyInitialStates)
-  u.sites = sites
-  return u
+  return Universe.create(bodies, sites, bodyInitialStates)
 }
 
-class Universe {
+export class Site {
+  init({ name, facilities, vessels, resources }) {
+    this.name = name
+    this.facilities = facilities
+    this.vessels = vessels
+    this.resources = resources
+    return this
+  }
+
+  static create({ name, facilities, vessels, resources }) {
+    return new Site().init({ name, facilities, vessels, resources })
+  }
+
+  serialize(serialize) {
+    return {
+      name: this.name,
+      facilities: this.facilities,
+      vessels: this.vessels.map(serialize),
+      resources: this.resources,
+    }
+  }
+
+  deserialize({ name, facilities, vessels, resources }, deserialize) {
+    this.init({ name, facilities, vessels: vessels.map(v => deserialize(VesselConfiguration, v)), resources })
+  }
+}
+
+export class Universe {
+  ephemeris
   currentTime = 0
   tMax = 0
   sites = []
-  /** @type {Array<import('./vessel.js').Vessel>} */
+  /** @type {Array<Vessel>} */
   vessels = []
 
-  constructor(bodies, bodyInitialStates) {
-    this.ephemeris = new Ephemeris({
-      bodies,
-      initialState: bodyInitialStates,
-      step: 1 * 60,
+  init({ ephemeris, currentTime, tMax, sites, vessels }) {
+    this.ephemeris = ephemeris
+    this.currentTime = currentTime
+    this.tMax = tMax
+    this.sites = sites
+    this.vessels = vessels
+    return this
+  }
+
+  static create(bodies, sites, bodyInitialStates) {
+    return new Universe().init({
+      ephemeris: Ephemeris.create({
+        bodies,
+        initialState: bodyInitialStates,
+        step: 1 * 60,
+      }),
+      currentTime: 0,
+      tMax: 0,
+      sites,
+      vessels: [],
+    })
+  }
+
+  serialize(serialize) {
+    return {
+      ephemeris: serialize(this.ephemeris),
+      currentTime: this.currentTime,
+      tMax: this.tMax,
+      sites: this.sites.map(ss => ss.map(serialize)),
+      vessels: this.vessels.map(serialize),
+    }
+  }
+
+  deserialize({ ephemeris, currentTime, tMax, sites, vessels }, deserialize) {
+    this.init({
+      ephemeris: deserialize(Ephemeris, ephemeris),
+      currentTime,
+      tMax,
+      sites: sites.map(ss => ss.map(s => deserialize(Site, s))),
+      vessels: vessels.map(v => deserialize(Vessel, v)),
     })
   }
 

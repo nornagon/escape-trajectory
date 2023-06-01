@@ -304,7 +304,7 @@ function VesselModule({module, onRemove}) {
 }
 
 export function BuildVessel({facility, site}) {
-  const [configuration] = useState(new VesselConfiguration({
+  const [configuration] = useState(VesselConfiguration.create({
     name: "Untitled",
     color: "lime",
     modules: [],

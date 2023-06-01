@@ -1,4 +1,5 @@
 import { Trajectory } from "./ephemeris.js"
+import { Module } from "./modules.js"
 import { vops } from "./geometry.js"
 
 const {
@@ -18,16 +19,45 @@ export class Maneuver {
   #referenceTrajectory
 
   /**
-   *
-   * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, initialMass: number}} param0
+   * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, initialMass: number, duration: number, direction: Vec2}} param0
    */
-  constructor({ vessel, startTime, referenceTrajectory, initialMass, duration = 0, direction = {x: 0, y: 0} }) {
+  init({ vessel, startTime, referenceTrajectory, initialMass, duration, direction }) {
     this.#vessel = vessel
     this.#startTime = startTime
     this.#duration = duration
     this.#direction = direction
     this.#referenceTrajectory = referenceTrajectory
     this.#initialMass = initialMass
+    return this
+  }
+
+  /**
+   * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, initialMass: number, duration?: number, direction?: Vec2}} param0
+   */
+  static create({ vessel, startTime, referenceTrajectory, initialMass, duration = 0, direction = {x: 0, y: 0} }) {
+    return new Maneuver().init({ vessel, startTime, referenceTrajectory, initialMass, duration, direction })
+  }
+
+  serialize(serialize) {
+    return {
+      vessel: serialize(this.#vessel),
+      startTime: this.#startTime,
+      duration: this.#duration,
+      direction: this.#direction,
+      referenceTrajectory: serialize(this.#referenceTrajectory),
+      initialMass: this.#initialMass,
+    }
+  }
+
+  deserialize({ vessel, startTime, duration, direction, referenceTrajectory, initialMass }, deserialize) {
+    this.init({
+      vessel: deserialize(Vessel, vessel),
+      startTime,
+      duration,
+      direction,
+      referenceTrajectory: deserialize(Trajectory, referenceTrajectory),
+      initialMass,
+    })
   }
 
   get vessel() { return this.#vessel }
@@ -71,10 +101,36 @@ export class Vessel {
   #trajectory
   /** @type {Array<Maneuver>} */
   #maneuvers
-  constructor({ configuration, trajectory, maneuvers, initialState }) {
+
+  init({ configuration, trajectory, maneuvers }) {
     this.#configuration = configuration
-    this.#trajectory = trajectory ?? new Trajectory([initialState])
-    this.#maneuvers = maneuvers ?? []
+    this.#trajectory = trajectory
+    this.#maneuvers = maneuvers
+    return this
+  }
+
+  static create({ configuration, trajectory, maneuvers, initialState }) {
+    return new Vessel().init({
+      configuration,
+      trajectory: trajectory ?? Trajectory.create([initialState]),
+      maneuvers: maneuvers ?? [],
+    })
+  }
+
+  serialize(serialize) {
+    return {
+      configuration: serialize(this.#configuration),
+      trajectory: serialize(this.#trajectory),
+      maneuvers: this.#maneuvers.map(serialize),
+    }
+  }
+
+  deserialize({ configuration, trajectory, maneuvers }, deserialize) {
+    this.init({
+      configuration: deserialize(VesselConfiguration, configuration),
+      trajectory: deserialize(Trajectory, trajectory),
+      maneuvers: maneuvers.map(m => deserialize(Maneuver, m)),
+    })
   }
 
   get name() { return this.#configuration.name }
@@ -99,7 +155,7 @@ export class Vessel {
   }
 
   addManeuver(startTime, referenceTrajectory) {
-    this.#maneuvers.push(new Maneuver({
+    this.#maneuvers.push(Maneuver.create({
       vessel: this,
       startTime,
       referenceTrajectory,
@@ -123,11 +179,30 @@ export class VesselConfiguration {
   #color
   #modules
   #resources
-  constructor({ name, color, modules, resources }) {
+
+  init({ name, color, modules, resources }) {
     this.#name = name
     this.#color = color
     this.#modules = modules
     this.#resources = {volatiles: 0, metals: 0, rareMetals: 0, fissionables: 0, ...resources}
+    return this
+  }
+
+  static create({ name, color, modules, resources }) {
+    return new VesselConfiguration().init({ name, color, modules, resources })
+  }
+
+  serialize(serialize) {
+    return {
+      name: this.#name,
+      color: this.#color,
+      modules: this.#modules.map(serialize),
+      resources: this.#resources,
+    }
+  }
+
+  deserialize({ name, color, modules, resources }, deserialize) {
+    this.init({ name, color, modules: modules.map(m => deserialize(Module, m)), resources })
   }
 
   get name() { return this.#name }

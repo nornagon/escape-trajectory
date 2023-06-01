@@ -6,8 +6,8 @@ import { render, options } from 'preact'
 import { formatDuration, map, sliding } from "./util.js"
 import { OverlayUI } from "./overlay-ui.js"
 import { uiState } from "./ui-store.js"
-import { universe, onUniverseChanged } from "./universe-state.js"
-const { ephemeris, vessels } = universe
+import { universe, onUniverseChanged, Universe } from "./universe-state.js"
+import { deserialize, serialize } from "./serialization.js"
 const {
   add: vadd,
   addi: vaddi,
@@ -86,7 +86,7 @@ function findNearestTrajectory(screenPos) {
   let closestP = null
   let closestD = Infinity
   let closestI = -1
-  vessels.forEach((vessel, i) => {
+  universe.vessels.forEach((vessel, i) => {
     // Find the closestPointpoint on |trajectory|
     for (const [a, b] of sliding(vessel.trajectory.points(), 2)) {
       const aScreenPos = worldToScreen(a.position, a.time)
@@ -146,15 +146,15 @@ canvas.addEventListener("mousedown", event => {
     window.removeEventListener("mouseup", mouseup)
     window.removeEventListener("blur", mouseup)
     if (!dragged) {
-      for (let i = 0; i < ephemeris.bodies.length; i++) {
-        const trajectory = ephemeris.trajectories[i]
+      for (let i = 0; i < universe.ephemeris.bodies.length; i++) {
+        const trajectory = universe.ephemeris.trajectories[i]
         const currentPosition = trajectory.evaluatePosition(universe.currentTime)
         const screenPos = worldToScreen(currentPosition)
 
         const dx = screenPos.x - event.offsetX
         const dy = screenPos.y - event.offsetY
         const r = Math.hypot(dx, dy)
-        if (r < Math.max(10, zoom * ephemeris.bodies[i].radius)) {
+        if (r < Math.max(10, zoom * universe.ephemeris.bodies[i].radius)) {
           selectBody(i)
           if (event.detail === 2) {
             setOriginBody(i)
@@ -165,8 +165,8 @@ canvas.addEventListener("mousedown", event => {
 
       const point = findNearestTrajectory(event)
       if (point) {
-        const vessel = vessels[point.i]
-        const m = vessel.addManeuver(point.t, ephemeris.trajectories[originBodyIndex])
+        const vessel = universe.vessels[point.i]
+        const m = vessel.addManeuver(point.t, universe.ephemeris.trajectories[originBodyIndex])
         selectManeuver(vessel, m)
       } else {
         if (currentManeuver) {
@@ -210,7 +210,7 @@ canvas.addEventListener("mouseup", event => {
 
 
 function worldToScreen(pos, t = universe.currentTime) {
-  const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const originBodyTrajectory = universe.ephemeris.trajectories[originBodyIndex]
   const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
     x: (pos.x - originBodyPosition.x) * zoom + width / 2 + pan.x,
@@ -218,7 +218,7 @@ function worldToScreen(pos, t = universe.currentTime) {
   }
 }
 function screenToWorld(pos, t = universe.currentTime) {
-  const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const originBodyTrajectory = universe.ephemeris.trajectories[originBodyIndex]
   const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
     x: (pos.x - width / 2 - pan.x) / zoom + originBodyPosition.x,
@@ -262,7 +262,7 @@ function bbTreeForTrajectory(trajectory) {
 }
 
 function trajectoryPosInFrame(trajectory, t) {
-  const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const originBodyTrajectory = universe.ephemeris.trajectories[originBodyIndex]
   const q = trajectory.evaluatePosition(t)
   const originQ = originBodyTrajectory.evaluatePosition(t)
 
@@ -274,7 +274,7 @@ function trajectoryPosInFrame(trajectory, t) {
 }
 
 function trajectoryVelocityInFrame(trajectory, t) {
-  const originBodyTrajectory = ephemeris.trajectories[originBodyIndex]
+  const originBodyTrajectory = universe.ephemeris.trajectories[originBodyIndex]
   const q = trajectory.evaluateVelocity(t)
   const originQ = originBodyTrajectory.evaluateVelocity(t)
 
@@ -401,7 +401,7 @@ function setOriginBody(i) {
  * @param {CanvasRenderingContext2D} ctx
  */
 function drawUI(ctx) {
-  vessels.forEach((vessel, i) => {
+  universe.vessels.forEach((vessel, i) => {
     const selected = uiState.selection?.type === 'vessel' && uiState.selection.index === i
     const pos = vessel.trajectory.evaluatePosition(universe.currentTime)
     const screenPos = worldToScreen(pos)
@@ -427,12 +427,12 @@ function drawUI(ctx) {
     }
   })
 
-  const selectedVessel = uiState.selection?.type === 'vessel' ? vessels[uiState.selection.index] : null
+  const selectedVessel = uiState.selection?.type === 'vessel' ? universe.vessels[uiState.selection.index] : null
   if (selectedVessel) {
     // Draw maneuver indicators.
     for (const maneuver of selectedVessel.maneuvers) {
       const q = selectedVessel.trajectory.evaluatePosition(maneuver.startTime)
-      const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(maneuver.startTime)
+      const originQ = universe.ephemeris.trajectories[originBodyIndex].evaluatePosition(maneuver.startTime)
       const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
 
       ctx.beginPath()
@@ -458,7 +458,7 @@ function drawUI(ctx) {
     }
     if (currentManeuver) {
       const q = selectedVessel.trajectory.evaluatePosition(currentManeuver.startTime)
-      const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(currentManeuver.startTime)
+      const originQ = universe.ephemeris.trajectories[originBodyIndex].evaluatePosition(currentManeuver.startTime)
       const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
 
       ctx.strokeStyle = 'lightblue'
@@ -629,7 +629,7 @@ function drawUI(ctx) {
       }
     } else if (trajectoryHoverPoint) {
       const q = selectedVessel.trajectory.evaluatePosition(trajectoryHoverPoint.t)
-      const originQ = ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryHoverPoint.t)
+      const originQ = universe.ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryHoverPoint.t)
       const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
 
       ctx.fillStyle = 'lightblue'
@@ -640,8 +640,8 @@ function drawUI(ctx) {
   }
 
   if (uiState.selection?.type === 'body') {
-    const body = ephemeris.bodies[uiState.selection.index]
-    const trajectory = ephemeris.trajectories[uiState.selection.index]
+    const body = universe.ephemeris.bodies[uiState.selection.index]
+    const trajectory = universe.ephemeris.trajectories[uiState.selection.index]
     const bodyScreenPos = worldToScreen(trajectory.evaluatePosition(universe.currentTime))
 
     const bodyRadius = body.radius * zoom
@@ -859,7 +859,7 @@ function draw() {
   ctx.lineWidth = 1
 
   const tMax = universe.tMax
-  ephemeris.trajectories.forEach((trajectory, i) => {
+  universe.ephemeris.trajectories.forEach((trajectory, i) => {
     if (i !== originBodyIndex) {
       const selected = uiState.selection?.type === 'body' && uiState.selection.index === i
       drawTrajectory(ctx, trajectory, selected)
@@ -867,9 +867,9 @@ function draw() {
   })
 
   // Draw bodies
-  for (let i = ephemeris.bodies.length - 1; i >= 0; i--) {
-    const body = ephemeris.bodies[i]
-    const trajectory = ephemeris.trajectories[i]
+  for (let i = universe.ephemeris.bodies.length - 1; i >= 0; i--) {
+    const body = universe.ephemeris.bodies[i]
+    const trajectory = universe.ephemeris.trajectories[i]
     ctx.fillStyle = body.color
     const pos = trajectory.evaluatePosition(universe.currentTime)
     const screenPos = worldToScreen(pos)
@@ -879,7 +879,7 @@ function draw() {
     ctx.fill()
 
     if (r > 2 && i !== 0) {
-      const sunPos = ephemeris.trajectories[0].evaluatePosition(universe.currentTime)
+      const sunPos = universe.ephemeris.trajectories[0].evaluatePosition(universe.currentTime)
       const sunScreenPos = worldToScreen(sunPos)
       const toSunNorm = vnormalize(vsub(sunScreenPos, pos))
       const offset = vadd(screenPos, vscale(toSunNorm, r * 0.1))
@@ -908,7 +908,7 @@ function draw() {
   }
 
   // Draw vessel trajectories
-  vessels.forEach((vessel, i) => {
+  universe.vessels.forEach((vessel, i) => {
     const selected = uiState.selection?.type === 'vessel' && uiState.selection.index === i
     drawVesselTrajectory(ctx, vessel, selected)
   })
@@ -938,17 +938,17 @@ function requestDraw() {
 }
 
 step.onclick = () => {
-  universe.currentTime += ephemeris.step
+  universe.currentTime += universe.ephemeris.step
   universe.prolong(universe.currentTime + predictionHorizon)
 }
 
 step10.onclick = () => {
-  universe.currentTime += ephemeris.step * 10
+  universe.currentTime += universe.ephemeris.step * 10
   universe.prolong(universe.currentTime + predictionHorizon)
 }
 
 step100.onclick = () => {
-  universe.currentTime += ephemeris.step * 100
+  universe.currentTime += universe.ephemeris.step * 100
   universe.prolong(universe.currentTime + predictionHorizon)
 }
 
@@ -986,6 +986,19 @@ document.querySelector("#extendPrediction").onclick = () => {
 document.querySelector("#reducePrediction").onclick = () => {
   predictionHorizon = Math.max(1 * Hour, predictionHorizon - 10 * Hour)
   universe.limit(universe.currentTime + predictionHorizon)
+}
+
+let saveState
+document.querySelector("#save").onclick = () => {
+  saveState = structuredClone(serialize(universe))
+}
+document.querySelector("#load").onclick = () => {
+  if (saveState) {
+    universe.init(deserialize(Universe, saveState))
+    debugger
+    clearSelection()
+    requestDraw()
+  }
 }
 
 function resizeCanvas() {

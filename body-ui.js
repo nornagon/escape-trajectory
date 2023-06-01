@@ -197,7 +197,7 @@ function LandedVessel({configuration, site, bodyId}) {
             velocity: bodyTrajectory.evaluateVelocity(universe.currentTime),
             mass: body.mass,
           }
-          universe.vessels.push(new Vessel({configuration, initialState: {...initialOrbitState(bodyState, 200e3 + body.radius), time: universe.currentTime}}))
+          universe.vessels.push(Vessel.create({configuration, initialState: {...initialOrbitState(bodyState, 200e3 + body.radius), time: universe.currentTime}}))
           site.vessels.splice(site.vessels.indexOf(configuration), 1)
           uiState.selection = { type: 'vessel', index: universe.vessels.length - 1 }
           universe.recompute()

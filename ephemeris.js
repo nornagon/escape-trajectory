@@ -188,9 +188,22 @@ function lowerBound(array, compare) {
 export class Trajectory {
   /** @type {Array<{time: number, position: Vec2, velocity: Vec2}>} */
   #points = []
-  constructor(initial) {
-    if (initial)
-      this.#points = initial
+
+  init({points}) {
+    this.#points = points
+    return this
+  }
+
+  static create(points = []) {
+    return new Trajectory().init({points})
+  }
+
+  serialize() {
+    return { points: this.#points }
+  }
+
+  deserialize({points}) {
+    this.init({ points })
   }
 
   append(time, position, velocity) {
@@ -273,21 +286,48 @@ export class Trajectory {
 /** @typedef {{name: string, mass: number, radius: number, color: string}} Body */
 
 export class Ephemeris {
+  /** @type {Array<Body>} */
   #bodies
+  /** @type {Array<Trajectory>} */
   #trajectories
+  /** @type {number} */
   #step
 
+  init({bodies, trajectories, step}) {
+    this.#bodies = bodies
+    this.#trajectories = trajectories
+    this.#step = step
+    return this
+  }
+
   /**
-   *
    * @param {{step: number, bodies: Array<Body>, initialState: Array<{position: Vec2, velocity: Vec2}>}} param0
    */
-  constructor({step, bodies, initialState}) {
+  static create({step, bodies, initialState}) {
     if (initialState.length !== bodies.length)
       throw new Error("initialState.length !== bodies.length")
-    this.#bodies = bodies
-    this.#step = step
-    this.#trajectories = initialState.map((dof) => {
-      return new Trajectory([{...dof, time: 0}])
+    return new Ephemeris().init({
+      bodies,
+      step,
+      trajectories: initialState.map((dof) => {
+        return Trajectory.create([{...dof, time: 0}])
+      })
+    })
+  }
+
+  serialize(serialize) {
+    return {
+      bodies: this.#bodies,
+      trajectories: this.#trajectories.map(serialize),
+      step: this.#step,
+    }
+  }
+
+  deserialize({bodies, trajectories, step}, deserialize) {
+    this.init({
+      bodies,
+      trajectories: trajectories.map(t => deserialize(Trajectory, t)),
+      step,
     })
   }
 
