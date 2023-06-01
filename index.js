@@ -8,6 +8,7 @@ import { OverlayUI } from "./overlay-ui.js"
 import { uiState } from "./ui-store.js"
 import { universe, onUniverseChanged, Universe } from "./universe-state.js"
 import { deserialize, serialize } from "./serialization.js"
+import * as idb from "idb-keyval"
 const {
   add: vadd,
   addi: vaddi,
@@ -988,17 +989,17 @@ document.querySelector("#reducePrediction").onclick = () => {
   universe.limit(universe.currentTime + predictionHorizon)
 }
 
-let saveState
 document.querySelector("#save").onclick = () => {
-  saveState = structuredClone(serialize(universe))
+  idb.set('universe', serialize(universe))
 }
 document.querySelector("#load").onclick = () => {
-  if (saveState) {
-    universe.init(deserialize(Universe, saveState))
-    debugger
-    clearSelection()
-    requestDraw()
-  }
+  idb.get('universe').then((saveState) => {
+    if (saveState) {
+      universe.init(deserialize(Universe, saveState))
+      clearSelection()
+      requestDraw()
+    }
+  })
 }
 
 function resizeCanvas() {
