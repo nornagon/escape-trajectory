@@ -27,7 +27,7 @@ export const parameterDisplay = {
   },
 }
 
-const g0 = 9.80665
+const g0 = 9.80665 // m/s²
 
 export class Module {
   static name = "Module"

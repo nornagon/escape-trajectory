@@ -11,6 +11,7 @@ const {
 } = vops
 
 export class Maneuver {
+  /** @type {Vessel} */
   #vessel
   #startTime
   #duration
@@ -177,6 +178,7 @@ export class Vessel {
 export class VesselConfiguration {
   #name
   #color
+  /** @type Array<Module> */
   #modules
   #resources
 
@@ -211,6 +213,9 @@ export class VesselConfiguration {
   get modules() { return this.#modules }
   get resources() { return this.#resources }
 
+  /**
+   * @returns {number} The total mass of the vessel, including resources.
+   */
   get mass() {
     return this.#modules.reduce((sum, m) => sum + m.mass, 0) + Object.values(this.#resources).reduce((sum, r) => sum + r, 0)
   }
@@ -229,7 +234,7 @@ export class VesselConfiguration {
     const totalMassFlowRate = this.#modules.reduce((sum, m) => sum + m.massFlowRate, 0)
     const initialMass = this.mass
     const finalMass = initialMass - this.#resources.volatiles
-    const effectiveIsp = totalThrust / totalMassFlowRate
-    return effectiveIsp * 9.80665 * Math.log(initialMass / finalMass)
+    const effectiveVexh = totalThrust / totalMassFlowRate
+    return effectiveVexh * Math.log(initialMass / finalMass)
   }
 }
