@@ -75,6 +75,17 @@ export class Maneuver {
     return vnormalize(vsub(this.#vessel.trajectory.evaluateVelocity(t), this.#referenceTrajectory.evaluateVelocity(t)))
   }
 
+  get deltaV() {
+    // TODO: use active engines instead of all engines
+    const totalThrust = this.vessel.configuration.modules.reduce((sum, m) => sum + m.thrust, 0)
+    const totalMassFlowRate = this.vessel.configuration.modules.reduce((sum, m) => sum + m.massFlowRate, 0)
+    const initialMass = this.vessel.mass
+    const massUsed = totalMassFlowRate * this.#duration
+    const finalMass = initialMass - massUsed
+    const effectiveVexh = totalThrust / totalMassFlowRate
+    return effectiveVexh * Math.log(initialMass / finalMass)
+  }
+
   inertialIntrinsicAcceleration(t) {
     // Intepret |direction| as if +x is prograde, +y is radial.
     const prograde = this.prograde
@@ -85,9 +96,9 @@ export class Maneuver {
 
   #computeIntrinsicAcceleration(t, direction) {
     if (t >= this.#startTime && t <= this.#startTime + this.#duration) {
-      const thrust = 1000000 // Newtons
-      // TODO: assume zero mass flow rate for now
-      return vscale(direction, thrust / this.#initialMass)
+      const thrust = this.vessel.configuration.modules.reduce((sum, m) => sum + m.thrust, 0)
+      const massFlowRate = this.vessel.configuration.modules.reduce((sum, m) => sum + m.massFlowRate, 0)
+      return vscale(direction, thrust / (this.#initialMass - massFlowRate * (t - this.#startTime)))
     }
     return { x: 0, y: 0 }
   }

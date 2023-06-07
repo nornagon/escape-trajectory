@@ -55,6 +55,9 @@ export class Module {
 export class Engine extends Module {
   static name = "Engine"
 
+  thrust // Newtons
+  isp // seconds
+
   get massFlowRate() {
     return this.thrust / (this.isp * g0)
   }

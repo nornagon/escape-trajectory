@@ -1,6 +1,7 @@
 import { html } from 'htm/preact'
 import { universe } from './universe-state.js'
 import { parameterDisplay } from './modules.js'
+import { formatDuration } from './util.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -59,6 +60,24 @@ export function VesselDetails({vesselId}) {
         ${vessel.configuration.modules.map(m => html`
           <div class="vessel-details__module">
             <div class="vessel-details__module-name">${m.name}</div>
+          </div>
+        `)}
+      </div>
+      <div class="vessel-details__resources">
+        ${Object.entries(vessel.configuration.resources).map(([name, amount]) => html`
+          <div class="vessel-details__resource">
+            <div class="vessel-details__resource-name">${name}</div>
+            <div class="vessel-details__resource-amount">${amount}</div>
+          </div>
+        `)}
+      </div>
+      <div class="vessel-details__maneuvers">
+        <div class="vessel-details__maneuvers-title">Maneuvers</div>
+        ${vessel.maneuvers.map(m => html`
+          <div class="vessel-details__maneuver">
+            <div class="vessel-details__maneuver-time">T–${formatDuration(m.startTime - universe.currentTime)}</div>
+            <div class="vessel-details__maneuver-duration">∆t ${formatDuration(m.duration)}</div>
+            <div class="vessel-details__maneuver-delta-v">∆v ${parameterDisplay.deltaV.format(m.deltaV)}</div>
           </div>
         `)}
       </div>

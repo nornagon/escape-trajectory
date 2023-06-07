@@ -962,7 +962,7 @@ function loop(t) {
   } else {
     const dt = t - last
     last = t
-    universe.currentTime += dt / 1000
+    universe.step(dt / 1000)
     universe.prolong(universe.currentTime + predictionHorizon)
   }
 }

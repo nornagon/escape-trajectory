@@ -146,6 +146,10 @@ export class Universe {
     })
   }
 
+  step(dt) {
+    this.currentTime += dt
+  }
+
   prolong(tMax) {
     let anyChanged = tMax !== this.tMax
     this.tMax = tMax
