@@ -343,11 +343,11 @@ function adjustManeuver() {
   } else {
     // If the draggingManeuverLen is less than 80, make the duration shorter.
     // If it's more than 80, make the duration longer.
-    const delta = (draggingManeuverLen - 80) / 70
+    const delta = (draggingManeuverLen - 80) / 70 // -1 to 1
     const dDuration = delta >= 0 ? Math.pow(delta, 2) : -Math.pow(-delta, 2)
 
     const durationVec = vscale(currentManeuver.direction, currentManeuver.duration)
-    const newDurationVec = vadd(durationVec, vscale({x: draggingManeuver.prograde, y: draggingManeuver.radial}, dDuration))
+    const newDurationVec = vadd(durationVec, vscale({x: draggingManeuver.prograde, y: draggingManeuver.radial}, dDuration * 100))
 
     const newDuration = vlen(newDurationVec)
     const newDirection = newDuration === 0 ? {x: 0, y: 0} : vnormalize(newDurationVec)
