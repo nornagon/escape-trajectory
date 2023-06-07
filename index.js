@@ -188,10 +188,8 @@ canvas.addEventListener("mousedown", event => {
 canvas.addEventListener("mousemove", event => {
   mouse.x = event.offsetX
   mouse.y = event.offsetY
-  /*
   const point = findNearestTrajectory(event)
   trajectoryHoverPoint = point
-  */
   const interactions = new InteractionContext2D(ctx)
   drawUI(interactions)
   const path = interactions.getPathForPoint({x: event.offsetX, y: event.offsetY})
