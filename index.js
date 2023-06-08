@@ -40,6 +40,7 @@ let originBodyIndex = 3
 uiState.selection = { type: 'body', index: 3 }
 
 let trajectoryHoverPoint = null
+/** @type {import("./vessel.js").Maneuver | null} */
 let currentManeuver = null
 let maneuverVessel = null
 
@@ -127,8 +128,8 @@ canvas.addEventListener("mousedown", event => {
 
   const interactions = new InteractionContext2D(ctx)
   drawUI(interactions)
-  const path = interactions.getPathForPoint({x: event.offsetX, y: event.offsetY})
-  if (path?.mousedown) return path.mousedown(event)
+  for (const path of interactions.pathsAtPoint({x: event.offsetX, y: event.offsetY}))
+    if (path?.mousedown) return path.mousedown(event)
 
   const x0 = event.offsetX - width / 2 - pan.x
   const y0 = event.offsetY - height / 2 - pan.y
@@ -167,8 +168,13 @@ canvas.addEventListener("mousedown", event => {
       const point = findNearestTrajectory(event)
       if (point) {
         const vessel = universe.vessels[point.i]
-        const m = vessel.addManeuver(point.t, universe.ephemeris.trajectories[originBodyIndex])
-        selectManeuver(vessel, m)
+        const maneuver = vessel.maneuvers.find(m => m.startTime <= point.t && m.endTime >= point.t)
+        if (maneuver) {
+          selectManeuver(vessel, maneuver)
+        } else {
+          const m = vessel.addManeuver(point.t, universe.ephemeris.trajectories[originBodyIndex])
+          selectManeuver(vessel, m)
+        }
       } else {
         if (currentManeuver) {
           selectManeuver(null, null)
@@ -190,10 +196,11 @@ canvas.addEventListener("mousemove", event => {
   mouse.y = event.offsetY
   const point = findNearestTrajectory(event)
   trajectoryHoverPoint = point
+  uiState.trajectoryHoverTime = point?.t
   const interactions = new InteractionContext2D(ctx)
   drawUI(interactions)
-  const path = interactions.getPathForPoint({x: event.offsetX, y: event.offsetY})
-  path?.mousemove?.(event)
+  for (const path of interactions.pathsAtPoint({x: event.offsetX, y: event.offsetY}))
+    path?.mousemove?.(event)
 
   requestDraw()
 })
@@ -201,8 +208,9 @@ canvas.addEventListener("mousemove", event => {
 canvas.addEventListener("mouseup", event => {
   const interactions = new InteractionContext2D(ctx)
   drawUI(interactions)
-  const path = interactions.getPathForPoint({x: event.offsetX, y: event.offsetY})
-  path?.mouseup?.(event)
+
+  for (const path of interactions.pathsAtPoint({x: event.offsetX, y: event.offsetY}))
+    path?.mouseup?.(event)
 
   requestDraw()
 })
@@ -338,6 +346,15 @@ function adjustManeuver() {
     currentManeuver.startTime += dt
     if (currentManeuver.startTime < universe.currentTime)
       currentManeuver.startTime = universe.currentTime
+    // Prevent the maneuver from overlapping the following maneuver.
+    const nextManeuver = currentManeuver.vessel.maneuvers.find(m => m.startTime > currentManeuver.startTime)
+    if (nextManeuver)
+      currentManeuver.startTime = Math.min(currentManeuver.startTime, nextManeuver.startTime - currentManeuver.duration)
+
+    // Prevent the maneuver from overlapping the previous maneuver.
+    const previousManeuver = currentManeuver.vessel.maneuvers.findLast(m => m.startTime < currentManeuver.startTime)
+    if (previousManeuver)
+      currentManeuver.startTime = Math.max(currentManeuver.startTime, previousManeuver.endTime)
   } else {
     // If the draggingManeuverLen is less than 80, make the duration shorter.
     // If it's more than 80, make the duration longer.
@@ -350,7 +367,24 @@ function adjustManeuver() {
     const newDuration = vlen(newDurationVec)
     const newDirection = newDuration === 0 ? {x: 0, y: 0} : vnormalize(newDurationVec)
 
-    currentManeuver.duration = newDuration
+    // Max out at the vessel's fuel limit.
+    // 1. Start with the total onboard fuel.
+    let fuel = currentManeuver.vessel.configuration.resources.volatiles
+    // 2. Subtract the fuel used by _other_ maneuvers.
+    for (const m of currentManeuver.vessel.maneuvers)
+      if (m !== currentManeuver)
+        fuel -= m.massUsed
+    // 3. Divide by mass flow rate.
+    let maxDuration = fuel / currentManeuver.massFlowRate
+
+    // Further prevent the maneuver from overlapping the following maneuver.
+    const nextManeuver = currentManeuver.vessel.maneuvers.find(m => m.startTime > currentManeuver.startTime)
+    if (nextManeuver) {
+      const nextManeuverStartTime = nextManeuver.startTime
+      maxDuration = Math.min(maxDuration, nextManeuverStartTime - currentManeuver.startTime)
+    }
+
+    currentManeuver.duration = Math.min(maxDuration, newDuration)
     currentManeuver.direction = newDirection
   }
   maneuverVessel.trajectory.forgetAfter(Math.min(oldStartTime, currentManeuver.startTime))
@@ -631,7 +665,9 @@ function drawUI(ctx) {
       const originQ = universe.ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryHoverPoint.t)
       const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
 
-      ctx.fillStyle = 'lightblue'
+      const isManeuvering = selectedVessel.maneuvers.some(m => m.startTime <= trajectoryHoverPoint.t && m.endTime >= trajectoryHoverPoint.t)
+
+      ctx.fillStyle = isManeuvering ? 'rgba(255, 128, 128, 0.8)' : 'lightblue'
       ctx.beginPath()
       ctx.arc(screenPos.x, screenPos.y, 5, 0, 2 * Math.PI)
       ctx.fill()
@@ -639,11 +675,9 @@ function drawUI(ctx) {
   }
 
   if (uiState.selection?.type === 'body') {
-    const body = universe.ephemeris.bodies[uiState.selection.index]
     const trajectory = universe.ephemeris.trajectories[uiState.selection.index]
     const bodyScreenPos = worldToScreen(trajectory.evaluatePosition(universe.currentTime))
 
-    const bodyRadius = body.radius * zoom
     // Draw a diamond around the body
     const diamondRadius = 10
     ctx.beginPath()

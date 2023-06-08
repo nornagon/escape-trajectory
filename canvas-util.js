@@ -82,12 +82,12 @@ export class InteractionContext2D {
     this.#currentPath[event] = handler
   }
 
-  getPathForPoint({x, y}) {
+  *pathsAtPoint({x, y}) {
     // Go backwards through the paths so we hit the topmost one first.
     for (let i = this.#paths.length - 1; i >= 0; i--) {
       const path = this.#paths[i]
       if (this.#ctx.isPointInPath(path, x, y))
-        return path
+        yield path
     }
   }
 }

@@ -2,6 +2,7 @@ import { html } from 'htm/preact'
 import { universe } from './universe-state.js'
 import { parameterDisplay } from './modules.js'
 import { formatDuration } from './util.js'
+import { uiState } from './ui-store.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -49,7 +50,7 @@ export function VesselDetails({vesselId}) {
       <div class="vessel-details__content">
         <div class="vessel-details__row">
           <div class="vessel-details__label">Mass</div>
-          <div class="vessel-details__value">${parameterDisplay.mass.format(vessel.mass)}</div>
+          <div class="vessel-details__value">${parameterDisplay.mass.format(uiState.trajectoryHoverTime != null ? vessel.massAt(uiState.trajectoryHoverTime) : vessel.mass)}</div>
         </div>
         <div class="vessel-details__row">
           <div class="vessel-details__label">∆v</div>
@@ -78,6 +79,7 @@ export function VesselDetails({vesselId}) {
             <div class="vessel-details__maneuver-time">T–${formatDuration(m.startTime - universe.currentTime)}</div>
             <div class="vessel-details__maneuver-duration">∆t ${formatDuration(m.duration)}</div>
             <div class="vessel-details__maneuver-delta-v">∆v ${parameterDisplay.deltaV.format(m.deltaV)}</div>
+            <div class="vessel-details__maneuver-delta-m">∆m ${parameterDisplay.mass.format(m.massUsed)}</div>
           </div>
         `)}
       </div>

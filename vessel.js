@@ -1,5 +1,5 @@
 import { Trajectory } from "./ephemeris.js"
-import { Module } from "./modules.js"
+import { Engine, Module } from "./modules.js"
 import { vops } from "./geometry.js"
 
 const {
@@ -20,23 +20,22 @@ export class Maneuver {
   #referenceTrajectory
 
   /**
-   * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, initialMass: number, duration: number, direction: Vec2}} param0
+   * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, duration: number, direction: Vec2}} param0
    */
-  init({ vessel, startTime, referenceTrajectory, initialMass, duration, direction }) {
+  init({ vessel, startTime, referenceTrajectory, duration, direction }) {
     this.#vessel = vessel
     this.#startTime = startTime
     this.#duration = duration
     this.#direction = direction
     this.#referenceTrajectory = referenceTrajectory
-    this.#initialMass = initialMass
     return this
   }
 
   /**
-   * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, initialMass: number, duration?: number, direction?: Vec2}} param0
+   * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, duration?: number, direction?: Vec2}} param0
    */
-  static create({ vessel, startTime, referenceTrajectory, initialMass, duration = 0, direction = {x: 0, y: 0} }) {
-    return new Maneuver().init({ vessel, startTime, referenceTrajectory, initialMass, duration, direction })
+  static create({ vessel, startTime, referenceTrajectory, duration = 0, direction = {x: 0, y: 0} }) {
+    return new Maneuver().init({ vessel, startTime, referenceTrajectory, duration, direction })
   }
 
   serialize(serialize) {
@@ -46,18 +45,16 @@ export class Maneuver {
       duration: this.#duration,
       direction: this.#direction,
       referenceTrajectory: serialize(this.#referenceTrajectory),
-      initialMass: this.#initialMass,
     }
   }
 
-  deserialize({ vessel, startTime, duration, direction, referenceTrajectory, initialMass }, deserialize) {
+  deserialize({ vessel, startTime, duration, direction, referenceTrajectory }, deserialize) {
     this.init({
       vessel: deserialize(Vessel, vessel),
       startTime,
       duration,
       direction,
       referenceTrajectory: deserialize(Trajectory, referenceTrajectory),
-      initialMass,
     })
   }
 
@@ -75,14 +72,27 @@ export class Maneuver {
     return vnormalize(vsub(this.#vessel.trajectory.evaluateVelocity(t), this.#referenceTrajectory.evaluateVelocity(t)))
   }
 
+  get activeEngines() {
+    // TODO: allow specifying which engines are active.
+    return this.vessel.configuration.modules.filter(m => m instanceof Engine)
+  }
+
+  get massFlowRate() {
+    return this.activeEngines.reduce((sum, m) => sum + m.massFlowRate, 0)
+  }
+
+  get thrust() {
+    return this.activeEngines.reduce((sum, m) => sum + m.thrust, 0)
+  }
+
+  get massUsed() {
+    return this.massFlowRate * this.#duration
+  }
+
   get deltaV() {
-    // TODO: use active engines instead of all engines
-    const totalThrust = this.vessel.configuration.modules.reduce((sum, m) => sum + m.thrust, 0)
-    const totalMassFlowRate = this.vessel.configuration.modules.reduce((sum, m) => sum + m.massFlowRate, 0)
-    const initialMass = this.vessel.mass
-    const massUsed = totalMassFlowRate * this.#duration
-    const finalMass = initialMass - massUsed
-    const effectiveVexh = totalThrust / totalMassFlowRate
+    const initialMass = this.vessel.massAt(this.#startTime)
+    const finalMass = initialMass - this.massUsed
+    const effectiveVexh = this.thrust / this.massFlowRate
     return effectiveVexh * Math.log(initialMass / finalMass)
   }
 
@@ -96,9 +106,7 @@ export class Maneuver {
 
   #computeIntrinsicAcceleration(t, direction) {
     if (t >= this.#startTime && t <= this.#startTime + this.#duration) {
-      const thrust = this.vessel.configuration.modules.reduce((sum, m) => sum + m.thrust, 0)
-      const massFlowRate = this.vessel.configuration.modules.reduce((sum, m) => sum + m.massFlowRate, 0)
-      return vscale(direction, thrust / (this.#initialMass - massFlowRate * (t - this.#startTime)))
+      return vscale(direction, this.thrust / this.vessel.massAt(t))
     }
     return { x: 0, y: 0 }
   }
@@ -152,6 +160,16 @@ export class Vessel {
   get color() { return this.#configuration.color }
   get maneuvers() { return this.#maneuvers }
 
+  massAt(t) {
+    // |t| must be >= vessel birth
+    let mass = this.#configuration.mass
+    for (const maneuver of this.#maneuvers) {
+      if (t >= maneuver.startTime)
+        mass -= maneuver.duration === 0 ? 0 : maneuver.massUsed * Math.min(1, (t - maneuver.startTime) / maneuver.duration)
+    }
+    return mass
+  }
+
   /**
    * @param {number} t
    * @returns {Vec2}
@@ -167,13 +185,14 @@ export class Vessel {
   }
 
   addManeuver(startTime, referenceTrajectory) {
-    this.#maneuvers.push(Maneuver.create({
+    const m = Maneuver.create({
       vessel: this,
       startTime,
       referenceTrajectory,
-      initialMass: this.mass, // TODO
-    }))
-    return this.#maneuvers[this.#maneuvers.length - 1]
+    })
+    this.#maneuvers.push(m)
+    this.#maneuvers.sort((a, b) => a.startTime - b.startTime)
+    return m
   }
 
   removeManeuver(maneuver) {
@@ -189,8 +208,9 @@ export class Vessel {
 export class VesselConfiguration {
   #name
   #color
-  /** @type Array<Module> */
+  /** @type {Array<Module>} */
   #modules
+  /** @type {Record<string, number>} */
   #resources
 
   init({ name, color, modules, resources }) {
