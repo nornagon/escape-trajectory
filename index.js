@@ -44,6 +44,7 @@ let trajectoryHoverPoint = null
 let currentManeuver = null
 let maneuverVessel = null
 
+/** @type {import("./vessel.js").Maneuver | null} */
 let draggingManeuver = null
 let draggingManeuverLen = 0
 let predictionHorizon = 1 * Day

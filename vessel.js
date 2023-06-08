@@ -15,27 +15,25 @@ export class Maneuver {
   #vessel
   #startTime
   #duration
-  #initialMass
   #direction // TODO: rename this. intensity?
   #referenceTrajectory
+  #inertiallyFixed
 
-  /**
-   * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, duration: number, direction: Vec2}} param0
-   */
-  init({ vessel, startTime, referenceTrajectory, duration, direction }) {
+  init({ vessel, startTime, referenceTrajectory, duration, direction, inertiallyFixed }) {
     this.#vessel = vessel
     this.#startTime = startTime
     this.#duration = duration
     this.#direction = direction
     this.#referenceTrajectory = referenceTrajectory
+    this.#inertiallyFixed = inertiallyFixed
     return this
   }
 
   /**
    * @param {{vessel: Vessel, startTime: number, referenceTrajectory: any, duration?: number, direction?: Vec2}} param0
    */
-  static create({ vessel, startTime, referenceTrajectory, duration = 0, direction = {x: 0, y: 0} }) {
-    return new Maneuver().init({ vessel, startTime, referenceTrajectory, duration, direction })
+  static create({ vessel, startTime, referenceTrajectory, duration = 0, direction = {x: 0, y: 0}, inertiallyFixed = false }) {
+    return new Maneuver().init({ vessel, startTime, referenceTrajectory, duration, direction, inertiallyFixed })
   }
 
   serialize(serialize) {
@@ -45,16 +43,18 @@ export class Maneuver {
       duration: this.#duration,
       direction: this.#direction,
       referenceTrajectory: serialize(this.#referenceTrajectory),
+      inertiallyFixed: this.#inertiallyFixed,
     }
   }
 
-  deserialize({ vessel, startTime, duration, direction, referenceTrajectory }, deserialize) {
+  deserialize({ vessel, startTime, duration, direction, referenceTrajectory, inertiallyFixed }, deserialize) {
     this.init({
       vessel: deserialize(Vessel, vessel),
       startTime,
       duration,
       direction,
       referenceTrajectory: deserialize(Trajectory, referenceTrajectory),
+      inertiallyFixed,
     })
   }
 
@@ -66,6 +66,9 @@ export class Maneuver {
   get direction() { return this.#direction }
   set direction(d) { this.#direction = d }
   get endTime() { return this.#startTime + this.#duration }
+
+  get inertiallyFixed() { return this.#inertiallyFixed }
+  set inertiallyFixed(f) { this.#inertiallyFixed = f }
 
   get prograde() {
     const t = this.#startTime
@@ -96,6 +99,13 @@ export class Maneuver {
     return effectiveVexh * Math.log(initialMass / finalMass)
   }
 
+  frenetIntrinsicAcceleration(t, q, v) {
+    const prograde = vnormalize(vsub(v, this.#referenceTrajectory.evaluateVelocity(t)))
+    const radial = vperp(prograde) // TODO: this isn't true frenet normal, it should be in the direction of acceleration.
+    const direction = vadd(vscale(prograde, this.#direction.x), vscale(radial, this.#direction.y))
+    return this.#computeIntrinsicAcceleration(t, direction)
+  }
+
   inertialIntrinsicAcceleration(t) {
     // Intepret |direction| as if +x is prograde, +y is radial.
     const prograde = this.prograde
@@ -118,6 +128,7 @@ export class Maneuver {
 export class Vessel {
   /** @type {VesselConfiguration} */
   #configuration
+  /** @type {import("./ephemeris.js").Trajectory} */
   #trajectory
   /** @type {Array<Maneuver>} */
   #maneuvers
@@ -174,10 +185,10 @@ export class Vessel {
    * @param {number} t
    * @returns {Vec2}
    */
-  intrinsicAcceleration(t) {
+  intrinsicAcceleration(t, q, v) {
     const a = { x: 0, y: 0 }
     for (const maneuver of this.#maneuvers) {
-      const ma = maneuver.inertialIntrinsicAcceleration(t)
+      const ma = maneuver.inertiallyFixed ? maneuver.inertialIntrinsicAcceleration(t) : maneuver.frenetIntrinsicAcceleration(t, q, v)
       a.x += ma.x
       a.y += ma.y
     }

@@ -80,6 +80,14 @@ export function VesselDetails({vesselId}) {
             <div class="vessel-details__maneuver-duration">∆t ${formatDuration(m.duration)}</div>
             <div class="vessel-details__maneuver-delta-v">∆v ${parameterDisplay.deltaV.format(m.deltaV)}</div>
             <div class="vessel-details__maneuver-delta-m">∆m ${parameterDisplay.mass.format(m.massUsed)}</div>
+            <label class="vessel-details__maneuver-inertially-fixed">
+              <input type="checkbox" class="vessel-details__maneuver-toggle" checked=${m.inertiallyFixed} oninput=${(e) => {
+                m.inertiallyFixed = e.target.checked
+                m.vessel.trajectory.forgetAfter(m.startTime)
+                universe.recompute()
+              }} />
+              Inertially fixed
+            </div>
           </div>
         `)}
       </div>

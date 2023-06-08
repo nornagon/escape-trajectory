@@ -96,6 +96,7 @@ export class Site {
 }
 
 export class Universe {
+  /** @type {Ephemeris} */
   ephemeris
   currentTime = 0
   tMax = 0
@@ -184,6 +185,7 @@ export class Universe {
   }
   recompute() {
     this.prolong(this.tMax)
+    universeChanged()
   }
 }
 

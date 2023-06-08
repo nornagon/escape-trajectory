@@ -2,7 +2,7 @@
 
 /** @typedef { import("./types").Vec2 } Vec2 */
 
-import { DormandالمكاوىPrince1986RKN434FM, ODEState, solveEmbeddedExplicitRungeKuttaNyström } from "./integrators.js"
+import { DormandالمكاوىPrince1986RKN434FM, Fine1987RKNG34, ODEState, solveEmbeddedExplicitGeneralizedRungeKuttaNyström, solveEmbeddedExplicitRungeKuttaNyström } from "./integrators.js"
 import { newhallApproximationInMonomialBasis } from "./newhall.js"
 
 import { vops } from "./geometry.js"
@@ -378,7 +378,7 @@ export class Ephemeris {
   /**
    * @param {Trajectory} trajectory
    * @param {number} t
-   * @param {(t: number, p: Vec2) => Vec2} intrinsicAcceleration
+   * @param {(t: number, p: Vec2, v: Vec2) => Vec2} intrinsicAcceleration
    * @param {*} parameters
    */
   flowWithAdaptiveStep(trajectory, t, intrinsicAcceleration = (() => vops.zero), parameters = {lengthIntegrationTolerance: 1, speedIntegrationTolerance: 1, maxSteps: Infinity}) {
@@ -404,11 +404,12 @@ export class Ephemeris {
     /**
      * @param {number} t
      * @param {Array<Vec2>} positions
+     * @param {Array<Vec2>} velocities
      * @param {Array<Vec2>} accelerations
      */
-    const computeAccelerations = (t, positions, accelerations) => {
+    const computeAccelerations = (t, positions, velocities, accelerations) => {
       this.computeGravitationalAccelerationByAllMassiveBodiesOnMasslessBodies(t, positions, accelerations)
-      const a = intrinsicAcceleration(t, positions[0])
+      const a = intrinsicAcceleration(t, positions[0], velocities[0])
       accelerations[0].x += a.x
       accelerations[0].y += a.y
     }
@@ -421,10 +422,10 @@ export class Ephemeris {
       toleranceToErrorRatio: toleranceToErrorRatio.bind(null, parameters.lengthIntegrationTolerance, parameters.speedIntegrationTolerance)
     }
 
-    solveEmbeddedExplicitRungeKuttaNyström(
+    solveEmbeddedExplicitGeneralizedRungeKuttaNyström(
       vops,
       instance,
-      DormandالمكاوىPrince1986RKN434FM,
+      Fine1987RKNG34,
       t,
     )
   }

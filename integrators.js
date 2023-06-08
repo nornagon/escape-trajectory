@@ -20,6 +20,21 @@
  */
 
 /**
+ * @typedef {Object} EmbeddedExplicitGeneralizedRungeKuttaNyströmMethod
+ * @property {number} higher_order
+ * @property {number} lower_order
+ * @property {number} stages
+ * @property {boolean} first_same_as_last
+ * @property {Array<number>} c
+ * @property {FixedStrictlyLowerTriangularMatrix} a
+ * @property {FixedStrictlyLowerTriangularMatrix} aʹ
+ * @property {Array<number>} b̂
+ * @property {Array<number>} b̂ʹ
+ * @property {Array<number>} b
+ * @property {Array<number>} bʹ
+ */
+
+/**
  * @typedef {Object} SymmetricLinearMultistepMethod
  * @property {Array<number>} alpha
  * @property {Array<number>} beta_numerator
@@ -62,6 +77,36 @@ export const DormandالمكاوىPrince1986RKN434FM = {
   b: [-7.0 / 150.0, 67.0 / 150.0, 3.0 / 20.0, -1.0 / 20.0],
   bʹ: [13.0 / 21.0, -20.0 / 27.0, 275.0 / 189.0, -1.0 / 3.0]
 }
+
+const Fine1987RKNG34b̂ = [19 / 180.0, 0, 63 / 200.0, 16 / 225.0, 1 / 120.0]
+const Fine1987RKNG34b̂ʹ = [1 / 9.0, 0, 9 / 20.0, 16 / 45.0, 1 / 12.0]
+/** @type {EmbeddedExplicitGeneralizedRungeKuttaNyströmMethod} */
+export const Fine1987RKNG34 = {
+  higher_order: 4,
+  lower_order: 3,
+  stages: 5,
+  first_same_as_last: false,
+  c: [0, 2 / 9.0, 1 / 3.0, 3 / 4.0, 1.0],
+  a: new FixedStrictlyLowerTriangularMatrix([
+    2 / 81.0,
+    1 / 36.0, 1 / 36.0,
+    9 / 128.0, 0, 27 / 128.0,
+    11 / 60.0, -3 / 20.0, 9 / 25.0, 8 / 75.0
+  ]),
+  aʹ: new FixedStrictlyLowerTriangularMatrix([
+    2 / 9.0,
+    1 / 12.0, 1 / 4.0,
+    69 / 128.0, -234 / 128.0, 135 / 64.0,
+    -17 / 12.0, 27 / 4.0, -27 / 5.0, 16 / 15.0
+  ]),
+  b̂: Fine1987RKNG34b̂,
+  b̂ʹ: Fine1987RKNG34b̂ʹ,
+  b: Fine1987RKNG34b̂.map((x, i) => x -
+    [25 / 1_116.0, 0, -63 / 1_240.0, 64 / 1_395.0, -13 / 744.0][i]),
+  bʹ: Fine1987RKNG34b̂ʹ.map((x, i) => x -
+    [2 / 125.0, 0, -27 / 625.0, 32 / 625.0, -3 / 125.0][i])
+};
+
 
 function twoSum(a, b) {
   const s = a + b;
@@ -200,6 +245,180 @@ export class ODEState {
     this.#positions = other.#positions.slice();
     this.#velocities = other.#velocities.slice();
   }
+}
+
+/**
+ * @see https://github.com/mockingbirdnest/Principia/blob/7b93a3b06cbd3787ff2697d9bd57d1c77ddd9968/integrators/embedded_explicit_generalized_runge_kutta_nystr%C3%B6m_integrator_body.hpp#L43
+ * @template T
+ * @param {Ops<T>} ops
+ * @param {{
+ *   currentState: ODEState<T>,
+ *   parameters: {
+ *     firstStep: number,
+ *     safetyFactor: number,
+ *     maxSteps: number,
+ *     lastStepIsExact: boolean
+ *   },
+ *   computeAccelerations: (t: number, q: Array<T>, v: Array<T>, a: Array<T>) => void,
+ *   step: number,
+ *   appendState: (state: ODEState<T>) => void,
+ *   toleranceToErrorRatio: (h: number, currentState: ODEState<T>, errorEstimate: { positionError: Array<T>, velocityError: Array<T> }) => number
+ * }} instance
+ * @param {EmbeddedExplicitGeneralizedRungeKuttaNyströmMethod} method
+ * @param {number} tFinal
+ */
+export function solveEmbeddedExplicitGeneralizedRungeKuttaNyström(ops, instance, method, tFinal) {
+  const { a, aʹ, b̂, b, b̂ʹ, bʹ, c } = method;
+  const { appendState, currentState, parameters, computeAccelerations } = instance
+
+  // State before the last, truncated step.
+  let finalState;
+
+  const dimension = currentState.positions.length;
+  const integrationDirection = Math.sign(parameters.firstStep);
+
+  // Position increment (high-order).
+  const dq̂ = Array.from({ length: dimension }, () => ops.zero);
+  // Velocity increment (high-order).
+  const dv̂ = Array.from({ length: dimension }, () => ops.zero);
+  // Current position.
+  const q̂ = currentState.positions;
+  // Current velocity.
+  const v̂ = currentState.velocities;
+
+  // Difference between the low- and high-order approximations.
+  const errorEstimate = {
+    positionError: Array.from({ length: dimension }, () => ops.zero),
+    velocityError: Array.from({ length: dimension }, () => ops.zero),
+  }
+
+  // Current Runge-Kutta-Nyström stage.
+  const qStage = Array.from({ length: dimension }, () => ops.zero);
+  const vStage = Array.from({ length: dimension }, () => ops.zero);
+  // Accelerations at each stage.
+  const g = Array.from({ length: method.stages }, () => Array.from({ length: dimension }, () => ops.zero));
+
+  let atEnd = false;
+  let toleranceToErrorRatio = NaN;
+
+  // The first stage of the Runge-Kutta-Nyström iteration.  In the FSAL case,
+  // |first_stage == 1| after the first step, since the first RHS evaluation has
+  // already occurred in the previous step.  In the non-FSAL case and in the
+  // first step of the FSAL case, |first_stage == 0|.
+  let firstStage = 0;
+
+  // The number of steps already performed.
+  let stepCount = 0;
+
+  // No step size control on the first step.  If this instance is being
+  // restarted we already have a value of |h| suitable for the next step, based
+  // on the computation of |tolerance_to_error_ratio_| during the last
+  // invocation.
+  let skipFirstChunk = true;
+
+  while (!atEnd) {
+    // Compute the next step with decreasing step sizes until the error is
+    // tolerable.
+    do {
+      if (!skipFirstChunk) {
+        // Adapt step size.
+        instance.step *= parameters.safetyFactor * Math.pow(toleranceToErrorRatio, 1 / (method.lower_order + 1));
+
+        if (currentState.time.value + (currentState.time.error + instance.step) === currentState.time.value) {
+          throw new Error("At time " + currentState.time.value + ", step size is effectively zero. Singularity or stiff system suspected.");
+        }
+      }
+      skipFirstChunk = false;
+
+      // Termination condition.
+      if (parameters.lastStepIsExact) {
+        const timeToEnd = (tFinal - currentState.time.value) - currentState.time.error;
+        atEnd = integrationDirection * instance.step >= integrationDirection * timeToEnd;
+        if (atEnd) {
+          // The chosen step size will overshoot.  Clip it to just reach the
+          // end, and terminate if the step is accepted.  Note that while this
+          // step size is a good approximation, there is no guarantee that it
+          // won't over/undershoot, so we still need to special case the very
+          // last stage below.
+          instance.step = timeToEnd;
+          finalState = currentState.clone();
+        }
+      }
+
+      const h2 = instance.step * instance.step;
+
+      // Runge-Kutta-Nyström iteration; fills |g|.
+      for (let i = firstStage; i < method.stages; i++) {
+        const tStage = parameters.lastStepIsExact && atEnd && c[i] === 1
+          ? tFinal
+          : currentState.time.value + (currentState.time.error + c[i] * instance.step);
+        for (let k = 0; k < dimension; k++) {
+          let Σⱼ_aᵢⱼ_gⱼₖ = ops.zero;
+          let Σⱼ_aʹᵢⱼ_gⱼₖ = ops.zero;
+          for (let j = 0; j < i; j++) {
+            Σⱼ_aᵢⱼ_gⱼₖ = ops.add(Σⱼ_aᵢⱼ_gⱼₖ, ops.scale(g[j][k], a.get(i, j)));
+            Σⱼ_aʹᵢⱼ_gⱼₖ = ops.add(Σⱼ_aʹᵢⱼ_gⱼₖ, ops.scale(g[j][k], aʹ.get(i, j)));
+          }
+          qStage[k] = ops.add(ops.add(q̂[k].value, ops.scale(v̂[k].value, instance.step * c[i])), ops.scale(Σⱼ_aᵢⱼ_gⱼₖ, h2));
+          vStage[k] = ops.add(v̂[k].value, ops.scale(Σⱼ_aʹᵢⱼ_gⱼₖ, instance.step));
+        }
+        computeAccelerations(tStage, qStage, vStage, g[i]);
+      }
+
+      // Increment computation and step size control.
+      for (let k = 0; k < dimension; k++) {
+        let Σᵢ_b̂ᵢ_gᵢₖ = ops.zero;
+        let Σᵢ_bᵢ_gᵢₖ = ops.zero;
+        let Σᵢ_b̂ʹᵢ_gᵢₖ = ops.zero;
+        let Σᵢ_bʹᵢ_gᵢₖ = ops.zero;
+        for (let i = 0; i < method.stages; i++) {
+          Σᵢ_b̂ᵢ_gᵢₖ = ops.add(Σᵢ_b̂ᵢ_gᵢₖ, ops.scale(g[i][k], b̂[i]));
+          Σᵢ_bᵢ_gᵢₖ = ops.add(Σᵢ_bᵢ_gᵢₖ, ops.scale(g[i][k], b[i]));
+          Σᵢ_b̂ʹᵢ_gᵢₖ = ops.add(Σᵢ_b̂ʹᵢ_gᵢₖ, ops.scale(g[i][k], b̂ʹ[i]));
+          Σᵢ_bʹᵢ_gᵢₖ = ops.add(Σᵢ_bʹᵢ_gᵢₖ, ops.scale(g[i][k], bʹ[i]));
+        }
+        // The hat-less dq and dv are the low-order increments.
+        dq̂[k] = ops.add(ops.scale(v̂[k].value, instance.step), ops.scale(Σᵢ_b̂ᵢ_gᵢₖ, h2));
+        const dqk = ops.add(ops.scale(v̂[k].value, instance.step), ops.scale(Σᵢ_bᵢ_gᵢₖ, h2));
+        dv̂[k] = ops.scale(Σᵢ_b̂ʹᵢ_gᵢₖ, instance.step);
+        const dvk = ops.scale(Σᵢ_bʹᵢ_gᵢₖ, instance.step);
+
+        errorEstimate.positionError[k] = ops.sub(dqk, dq̂[k]);
+        errorEstimate.velocityError[k] = ops.sub(dvk, dv̂[k]);
+      }
+
+      toleranceToErrorRatio = instance.toleranceToErrorRatio(instance.step, currentState, errorEstimate);
+    } while (toleranceToErrorRatio < 1.0);
+
+    if (!parameters.lastStepIsExact && currentState.time.value + (currentState.time.error + instance.step) >= tFinal) {
+      // We did overshoot.  Drop the point that we just computed and exit.
+      finalState = currentState.clone();
+      break;
+    }
+
+    if (method.first_same_as_last) {
+      const tmp = g[0]
+      g[0] = g[g.length - 1];
+      g[g.length - 1] = tmp;
+      firstStage = 1;
+    }
+
+    // Increment the solution with the high-order approximation.
+    currentState.time.increment(instance.step);
+    for (let k = 0; k < dimension; k++) {
+      q̂[k].increment(dq̂[k]);
+      v̂[k].increment(dv̂[k]);
+    }
+
+    appendState(currentState);
+    stepCount++;
+    if (stepCount === parameters.maxSteps && !atEnd) {
+      throw new Error("Reached maximum step count " + parameters.maxSteps + " at time " + currentState.time.value + "; requested tFinal is " + tFinal + ".");
+    }
+  }
+  if (!finalState)
+    throw new Error("!finalState");
+  currentState.copyFrom(finalState);
 }
 
 /**
