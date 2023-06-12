@@ -39,6 +39,25 @@ styles.replaceSync(`
 .vessel-details__value {
   color: lightgray;
 }
+
+.vessel-details__maneuvers {
+  margin-top: 8px;
+  border-top: 1px solid #3bffbd;
+  padding-top: 8px;
+}
+
+.vessel-details__maneuvers-title {
+  color: #3bffbd;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.vessel-details__maneuver {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #3bffbd;
+}
+
 `)
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles]
 
