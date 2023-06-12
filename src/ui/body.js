@@ -1,9 +1,9 @@
 import { html } from 'htm/preact'
-import { uiState } from './ui-store.js'
-import { universe } from './universe-state.js'
-import { Vessel } from './vessel.js'
-import { initialOrbitState } from './ephemeris.js'
-import { parameterDisplay } from './modules.js'
+import { uiState } from './store.js'
+import { universe } from '../universe-state.js'
+import { Vessel } from '../vessel.js'
+import { initialOrbitState } from '../ephemeris.js'
+import { parameterDisplay } from '../modules.js'
 import { NumberInput } from './number-input.js'
 
 const styles = new CSSStyleSheet()

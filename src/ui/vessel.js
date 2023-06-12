@@ -1,8 +1,8 @@
 import { html } from 'htm/preact'
-import { universe } from './universe-state.js'
-import { parameterDisplay } from './modules.js'
-import { formatDuration } from './util.js'
-import { uiState } from './ui-store.js'
+import { universe } from '../universe-state.js'
+import { parameterDisplay } from '../modules.js'
+import { formatDuration } from '../util.js'
+import { uiState } from './store.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`

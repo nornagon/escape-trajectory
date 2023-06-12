@@ -1,8 +1,8 @@
 import { html } from 'htm/preact'
 import { useState } from 'preact/hooks'
-import { uiState } from './ui-store.js'
-import { moduleTypes, parameterDisplay } from './modules.js'
-import { VesselConfiguration } from './vessel.js'
+import { uiState } from './store.js'
+import { moduleTypes, parameterDisplay } from '../modules.js'
+import { VesselConfiguration } from '../vessel.js'
 import { NumberInput } from './number-input.js'
 
 const styles = new CSSStyleSheet()

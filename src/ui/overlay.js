@@ -1,7 +1,7 @@
 import { html } from 'htm/preact'
-import { uiState } from './ui-store.js'
-import { BodyDetails } from './body-ui.js'
-import { VesselDetails } from './vessel-ui.js'
+import { uiState } from './store.js'
+import { BodyDetails } from './body.js'
+import { VesselDetails } from './vessel.js'
 import { BuildVessel } from './build-vessel.js'
 
 export function OverlayUI() {

@@ -4,8 +4,8 @@ import { BBTree, vops, lerp } from "./geometry.js"
 import { html } from 'htm/preact'
 import { render, options } from 'preact'
 import { formatDuration, map, sliding } from "./util.js"
-import { OverlayUI } from "./overlay-ui.js"
-import { uiState } from "./ui-store.js"
+import { OverlayUI } from "./ui/overlay.js"
+import { uiState } from "./ui/store.js"
 import { universe, onUniverseChanged, Universe } from "./universe-state.js"
 import { deserialize, serialize } from "./serialization.js"
 import * as idb from "idb-keyval"
