@@ -5,6 +5,7 @@ import { Vessel } from '../vessel.js'
 import { initialOrbitState } from '../ephemeris.js'
 import { parameterDisplay } from '../modules.js'
 import { NumberInput } from './number-input.js'
+import { Resources } from './resources.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -56,12 +57,6 @@ styles.replaceSync(`
   content: "VESSELS";
   font-size: 0.8em;
   color: #96F9FF;
-}
-
-.body-details__site-resources {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
 }
 
 .body-details__facility {
@@ -126,18 +121,6 @@ styles.replaceSync(`
   flex-direction: row;
   justify-content: space-between;
 }
-
-.body-details__site-resources {
-  display: flex;
-  flex-direction: column;
-}
-
-.body-details__site-resource {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-}
-
 `)
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles]
 
@@ -211,28 +194,7 @@ function Site({bodyId, site}) {
   return html`
     <div class="body-details__site">
       <div class="body-details__site-name">${site.name}</div>
-      <div class="body-details__site-resources">
-        <div class="body-details__site-resource">
-          <div class="body-details__site-resource-name">O</div>
-          <div class="body-details__site-resource-amount">${parameterDisplay.mass.format(site.resources.ore)}</div>
-        </div>
-        <div class="body-details__site-resource">
-          <div class="body-details__site-resource-name">V</div>
-          <div class="body-details__site-resource-amount">${parameterDisplay.mass.format(site.resources.volatiles)}</div>
-        </div>
-        <div class="body-details__site-resource">
-          <div class="body-details__site-resource-name">M</div>
-          <div class="body-details__site-resource-amount">${parameterDisplay.mass.format(site.resources.metals)}</div>
-        </div>
-        <div class="body-details__site-resource">
-          <div class="body-details__site-resource-name">R</div>
-          <div class="body-details__site-resource-amount">${parameterDisplay.mass.format(site.resources.rareMetals)}</div>
-        </div>
-        <div class="body-details__site-resource">
-          <div class="body-details__site-resource-name">U</div>
-          <div class="body-details__site-resource-amount">${parameterDisplay.mass.format(site.resources.fissionables)}</div>
-        </div>
-      </div>
+      <${Resources} resources=${site.resources} />
       <div class="body-details__site-facilities">
         ${site.facilities.map(facility => html`<${Facility} site=${site} facility=${facility} />`)}
       </div>

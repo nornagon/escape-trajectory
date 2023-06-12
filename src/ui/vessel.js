@@ -3,6 +3,7 @@ import { universe } from '../universe-state.js'
 import { parameterDisplay } from '../modules.js'
 import { formatDuration } from '../util.js'
 import { uiState } from './store.js'
+import { Resources } from './resources.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -38,6 +39,18 @@ styles.replaceSync(`
 
 .vessel-details__value {
   color: lightgray;
+}
+
+.vessel-details__modules {
+  border-top: 1px solid #3bffbd;
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.vessel-details__modules-title {
+  color: #3bffbd;
+  text-transform: uppercase;
+  margin-bottom: 8px;
 }
 
 .vessel-details__maneuvers {
@@ -76,18 +89,12 @@ export function VesselDetails({vesselId}) {
           <div class="vessel-details__value">${parameterDisplay.deltaV.format(uiState.trajectoryHoverTime != null ? vessel.deltaVAt(uiState.trajectoryHoverTime) : vessel.deltaV)}</div>
         </div>
       </div>
+      <${Resources} resources=${uiState.trajectoryHoverTime != null ? vessel.resourcesAt(uiState.trajectoryHoverTime) : vessel.configuration.resources} />
       <div class="vessel-details__modules">
+        <div class="vessel-details__modules-title">Modules</div>
         ${vessel.configuration.modules.map(m => html`
           <div class="vessel-details__module">
             <div class="vessel-details__module-name">${m.name}</div>
-          </div>
-        `)}
-      </div>
-      <div class="vessel-details__resources">
-        ${Object.entries(uiState.trajectoryHoverTime != null ? vessel.resourcesAt(uiState.trajectoryHoverTime) : vessel.configuration.resources).map(([name, amount]) => html`
-          <div class="vessel-details__resource">
-            <div class="vessel-details__resource-name">${name}</div>
-            <div class="vessel-details__resource-amount">${amount}</div>
           </div>
         `)}
       </div>
