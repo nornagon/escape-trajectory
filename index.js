@@ -167,7 +167,7 @@ canvas.addEventListener("mousedown", event => {
       }
 
       const point = findNearestTrajectory(event)
-      if (point) {
+      if (point && uiState.selection?.type === 'vessel' && uiState.selection.index === point.i) {
         const vessel = universe.vessels[point.i]
         const maneuver = vessel.maneuvers.find(m => m.startTime <= point.t && m.endTime >= point.t)
         if (maneuver) {
@@ -360,7 +360,7 @@ function adjustManeuver() {
     // If the draggingManeuverLen is less than 80, make the duration shorter.
     // If it's more than 80, make the duration longer.
     const delta = (draggingManeuverLen - 80) / 70 // -1 to 1
-    const dDuration = delta >= 0 ? Math.pow(delta, 2) : -Math.pow(-delta, 2)
+    const dDuration = delta >= 0 ? Math.pow(delta, 4) : -Math.pow(-delta, 4)
 
     const durationVec = vscale(currentManeuver.direction, currentManeuver.duration)
     const newDurationVec = vadd(durationVec, vscale({x: draggingManeuver.prograde, y: draggingManeuver.radial}, dDuration * 100))
