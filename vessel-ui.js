@@ -54,7 +54,7 @@ export function VesselDetails({vesselId}) {
         </div>
         <div class="vessel-details__row">
           <div class="vessel-details__label">∆v</div>
-          <div class="vessel-details__value">${parameterDisplay.deltaV.format(vessel.configuration.deltaV)}</div>
+          <div class="vessel-details__value">${parameterDisplay.deltaV.format(uiState.trajectoryHoverTime != null ? vessel.deltaVAt(uiState.trajectoryHoverTime) : vessel.deltaV)}</div>
         </div>
       </div>
       <div class="vessel-details__modules">
@@ -65,7 +65,7 @@ export function VesselDetails({vesselId}) {
         `)}
       </div>
       <div class="vessel-details__resources">
-        ${Object.entries(vessel.configuration.resources).map(([name, amount]) => html`
+        ${Object.entries(uiState.trajectoryHoverTime != null ? vessel.resourcesAt(uiState.trajectoryHoverTime) : vessel.configuration.resources).map(([name, amount]) => html`
           <div class="vessel-details__resource">
             <div class="vessel-details__resource-name">${name}</div>
             <div class="vessel-details__resource-amount">${amount}</div>

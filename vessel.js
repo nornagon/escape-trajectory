@@ -13,10 +13,15 @@ const {
 export class Maneuver {
   /** @type {Vessel} */
   #vessel
+  /** @type {number} */
   #startTime
+  /** @type {number} */
   #duration
+  /** @type {Vec2} */
   #direction // TODO: rename this. intensity?
+  /** @type {Trajectory} */
   #referenceTrajectory
+  /** @type {boolean} */
   #inertiallyFixed
 
   init({ vessel, startTime, referenceTrajectory, duration, direction, inertiallyFixed }) {
@@ -167,18 +172,37 @@ export class Vessel {
   get name() { return this.#configuration.name }
   get configuration() { return this.#configuration }
   get mass() { return this.#configuration.mass }
+  get deltaV() { return this.#configuration.deltaV }
   get trajectory() { return this.#trajectory }
   get color() { return this.#configuration.color }
   get maneuvers() { return this.#maneuvers }
 
-  massAt(t) {
-    // |t| must be >= vessel birth
-    let mass = this.#configuration.mass
+  fuelAt(t) {
+    let mass = this.#configuration.resources.volatiles
     for (const maneuver of this.#maneuvers) {
       if (t >= maneuver.startTime)
         mass -= maneuver.duration === 0 ? 0 : maneuver.massUsed * Math.min(1, (t - maneuver.startTime) / maneuver.duration)
     }
     return mass
+  }
+
+  resourcesAt(t) {
+    return {
+      ...this.#configuration.resources,
+      volatiles: this.fuelAt(t),
+    }
+  }
+
+  massAt(t) {
+    return this.fuelAt(t) + this.#configuration.dryMass
+  }
+
+  deltaVAt(t) {
+    const volatiles = this.#configuration.resources.volatiles
+    this.#configuration.resources.volatiles = this.fuelAt(t)
+    const dv = this.#configuration.deltaV
+    this.#configuration.resources.volatiles = volatiles
+    return dv
   }
 
   /**
@@ -259,7 +283,11 @@ export class VesselConfiguration {
    * @returns {number} The total mass of the vessel, including resources.
    */
   get mass() {
-    return this.#modules.reduce((sum, m) => sum + m.mass, 0) + Object.values(this.#resources).reduce((sum, r) => sum + r, 0)
+    return this.dryMass + Object.values(this.#resources).reduce((sum, r) => sum + r, 0)
+  }
+
+  get dryMass() {
+    return this.#modules.reduce((sum, m) => sum + m.mass, 0)
   }
 
   get deltaV() {
