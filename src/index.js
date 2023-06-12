@@ -694,6 +694,7 @@ function drawUI(ctx) {
 }
 
 function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
+  ctx.beginPath()
   const bbtree = bbTreeForTrajectory(trajectory)
   const displayBB = {
     minX: (-width / 2 - pan.x) / zoom,
@@ -707,7 +708,6 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
   if (!firstSegment) return
 
   ctx.save()
-  ctx.beginPath()
   console.group('trajectory')
   let nSegs = 0
   while (firstSegment) {
