@@ -2,7 +2,7 @@ import { html } from 'htm/preact'
 import { universe } from '../universe-state.js'
 import { parameterDisplay } from '../modules.js'
 import { formatDuration } from '../util.js'
-import { uiState } from './store.js'
+import { transientUiState, uiState } from './store.js'
 import { Resources } from './resources.js'
 
 const styles = new CSSStyleSheet()
@@ -76,20 +76,21 @@ document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles]
 
 export function VesselDetails({vesselId}) {
   const vessel = universe.vessels[vesselId]
+  const hoverTime = transientUiState.trajectoryHoverTime
   return html`
     <div class="vessel-details">
       <div class="vessel-details__title">${vessel.name}</div>
       <div class="vessel-details__content">
         <div class="vessel-details__row">
           <div class="vessel-details__label">Mass</div>
-          <div class="vessel-details__value">${parameterDisplay.mass.format(uiState.trajectoryHoverTime != null ? vessel.massAt(uiState.trajectoryHoverTime) : vessel.mass)}</div>
+          <div class="vessel-details__value">${parameterDisplay.mass.format(hoverTime != null ? vessel.massAt(hoverTime) : vessel.mass)}</div>
         </div>
         <div class="vessel-details__row">
           <div class="vessel-details__label">∆v</div>
-          <div class="vessel-details__value">${parameterDisplay.deltaV.format(uiState.trajectoryHoverTime != null ? vessel.deltaVAt(uiState.trajectoryHoverTime) : vessel.deltaV)}</div>
+          <div class="vessel-details__value">${parameterDisplay.deltaV.format(hoverTime != null ? vessel.deltaVAt(hoverTime) : vessel.deltaV)}</div>
         </div>
       </div>
-      <${Resources} resources=${uiState.trajectoryHoverTime != null ? vessel.resourcesAt(uiState.trajectoryHoverTime) : vessel.configuration.resources} />
+      <${Resources} resources=${hoverTime != null ? vessel.resourcesAt(hoverTime) : vessel.configuration.resources} />
       <div class="vessel-details__modules">
         <div class="vessel-details__modules-title">Modules</div>
         ${vessel.configuration.modules.map(m => html`

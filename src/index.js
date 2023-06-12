@@ -5,7 +5,7 @@ import { html } from 'htm/preact'
 import { render, options } from 'preact'
 import { formatDuration, map, sliding } from "./util.js"
 import { OverlayUI } from "./ui/overlay.js"
-import { uiState } from "./ui/store.js"
+import { transientUiState, uiState } from "./ui/store.js"
 import { universe, onUniverseChanged, Universe } from "./universe-state.js"
 import { deserialize, serialize } from "./serialization.js"
 import * as idb from "idb-keyval"
@@ -33,16 +33,12 @@ let trajectoryBBTrees = new WeakMap
 /// UI STATE
 let mouse = {x: 0, y: 0}
 
-let pan = {x: 0, y: 0}
-let zoom = 38e-6
-
 let originBodyIndex = 3
 uiState.selection = { type: 'body', index: 3 }
 
 let trajectoryHoverPoint = null
 /** @type {import("./vessel.js").Maneuver | null} */
 let currentManeuver = null
-let maneuverVessel = null
 
 /** @type {import("./vessel.js").Maneuver | null} */
 let draggingManeuver = null
@@ -69,17 +65,17 @@ canvas.addEventListener("wheel", event => {
 
   const wheelDelta = defaultWheelDelta(event)
 
-  const x = event.offsetX - width / 2 - pan.x
-  const y = event.offsetY - height / 2 - pan.y
+  const x = event.offsetX - width / 2 - uiState.pan.x
+  const y = event.offsetY - height / 2 - uiState.pan.y
 
   let k = Math.pow(2, wheelDelta)
-  let oldZoom = zoom
-  zoom *= k
-  zoom = Math.min(zoom, 1)
-  k = zoom / oldZoom
+  let oldZoom = uiState.zoom
+  uiState.zoom *= k
+  uiState.zoom = Math.min(uiState.zoom, 1)
+  k = uiState.zoom / oldZoom
 
-  pan.x = event.offsetX - width / 2 - x * k
-  pan.y = event.offsetY - height / 2 - y * k
+  uiState.pan.x = event.offsetX - width / 2 - x * k
+  uiState.pan.y = event.offsetY - height / 2 - y * k
 
   requestDraw()
 })
@@ -132,13 +128,13 @@ canvas.addEventListener("mousedown", event => {
   for (const path of interactions.pathsAtPoint({x: event.offsetX, y: event.offsetY}))
     if (path?.mousedown) return path.mousedown(event)
 
-  const x0 = event.offsetX - width / 2 - pan.x
-  const y0 = event.offsetY - height / 2 - pan.y
+  const x0 = event.offsetX - width / 2 - uiState.pan.x
+  const y0 = event.offsetY - height / 2 - uiState.pan.y
 
   let dragged = false
   function mousemove(event) {
-    pan.x = event.offsetX - width / 2 - x0
-    pan.y = event.offsetY - height / 2 - y0
+    uiState.pan.x = event.offsetX - width / 2 - x0
+    uiState.pan.y = event.offsetY - height / 2 - y0
     dragged = true
 
     requestDraw()
@@ -157,7 +153,7 @@ canvas.addEventListener("mousedown", event => {
         const dx = screenPos.x - event.offsetX
         const dy = screenPos.y - event.offsetY
         const r = Math.hypot(dx, dy)
-        if (r < Math.max(10, zoom * universe.ephemeris.bodies[i].radius)) {
+        if (r < Math.max(10, uiState.zoom * universe.ephemeris.bodies[i].radius)) {
           selectBody(i)
           if (event.detail === 2) {
             setOriginBody(i)
@@ -197,7 +193,7 @@ canvas.addEventListener("mousemove", event => {
   mouse.y = event.offsetY
   const point = findNearestTrajectory(event)
   trajectoryHoverPoint = point
-  uiState.trajectoryHoverTime = point?.t
+  transientUiState.trajectoryHoverTime = point?.t
   const interactions = new InteractionContext2D(ctx)
   drawUI(interactions)
   for (const path of interactions.pathsAtPoint({x: event.offsetX, y: event.offsetY}))
@@ -221,30 +217,30 @@ function worldToScreen(pos, t = universe.currentTime) {
   const originBodyTrajectory = universe.ephemeris.trajectories[originBodyIndex]
   const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
-    x: (pos.x - originBodyPosition.x) * zoom + width / 2 + pan.x,
-    y: (pos.y - originBodyPosition.y) * zoom + height / 2 + pan.y,
+    x: (pos.x - originBodyPosition.x) * uiState.zoom + width / 2 + uiState.pan.x,
+    y: (pos.y - originBodyPosition.y) * uiState.zoom + height / 2 + uiState.pan.y,
   }
 }
 function screenToWorld(pos, t = universe.currentTime) {
   const originBodyTrajectory = universe.ephemeris.trajectories[originBodyIndex]
   const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
-    x: (pos.x - width / 2 - pan.x) / zoom + originBodyPosition.x,
-    y: (pos.y - height / 2 - pan.y) / zoom + originBodyPosition.y,
+    x: (pos.x - width / 2 - uiState.pan.x) / uiState.zoom + originBodyPosition.x,
+    y: (pos.y - height / 2 - uiState.pan.y) / uiState.zoom + originBodyPosition.y,
   }
 }
 // This version doesn't subtract the origin body's position, so it can be used
 // when drawing trajectories.
 function worldToScreenWithoutOrigin(pos) {
   return {
-    x: pos.x * zoom + width / 2 + pan.x,
-    y: pos.y * zoom + height / 2 + pan.y,
+    x: pos.x * uiState.zoom + width / 2 + uiState.pan.x,
+    y: pos.y * uiState.zoom + height / 2 + uiState.pan.y,
   }
 }
 function screenToWorldWithoutOrigin(pos) {
   return {
-    x: (pos.x - width / 2 - pan.x) / zoom,
-    y: (pos.y - height / 2 - pan.y) / zoom,
+    x: (pos.x - width / 2 - uiState.pan.x) / uiState.zoom,
+    y: (pos.y - height / 2 - uiState.pan.y) / uiState.zoom,
   }
 }
 
@@ -295,7 +291,7 @@ function trajectoryVelocityInFrame(trajectory, t) {
 
 function* trajectoryPoints(trajectory, t0, t1, opts = {}) {
   if (t1 === t0) return
-  const { maxPoints = Infinity, resolution = 2/zoom } = opts
+  const { maxPoints = Infinity, resolution = 2/uiState.zoom } = opts
   const finalTime = t1
   let previousTime = t0
   let previousPosition = trajectoryPosInFrame(trajectory, t0)
@@ -388,9 +384,9 @@ function adjustManeuver() {
     currentManeuver.duration = Math.min(maxDuration, newDuration)
     currentManeuver.direction = newDirection
   }
-  maneuverVessel.trajectory.forgetAfter(Math.min(oldStartTime, currentManeuver.startTime))
+  currentManeuver.vessel.trajectory.forgetAfter(Math.min(oldStartTime, currentManeuver.startTime))
   universe.recompute()
-  trajectoryBBTrees.delete(maneuverVessel.trajectory)
+  trajectoryBBTrees.delete(currentManeuver.vessel.trajectory)
 
   requestDraw()
   requestAnimationFrame(adjustManeuver)
@@ -416,17 +412,16 @@ function clearSelection() {
 
 function selectManeuver(vessel, maneuver) {
   if (currentManeuver?.duration === 0) {
-    maneuverVessel.removeManeuver(currentManeuver)
+    currentManeuver.vessel.removeManeuver(currentManeuver)
   }
   currentManeuver = maneuver
-  maneuverVessel = vessel
 }
 
 function setOriginBody(i) {
   originBodyIndex = i
   trajectoryBBTrees = new WeakMap
-  pan.x = 0
-  pan.y = 0
+  uiState.pan.x = 0
+  uiState.pan.y = 0
 
   requestDraw()
 }
@@ -697,10 +692,10 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
   ctx.beginPath()
   const bbtree = bbTreeForTrajectory(trajectory)
   const displayBB = {
-    minX: (-width / 2 - pan.x) / zoom,
-    minY: (-height / 2 - pan.y) / zoom,
-    maxX: (width / 2 - pan.x) / zoom,
-    maxY: (height / 2 - pan.y) / zoom,
+    minX: (-width / 2 - uiState.pan.x) / uiState.zoom,
+    minY: (-height / 2 - uiState.pan.y) / uiState.zoom,
+    maxX: (width / 2 - uiState.pan.x) / uiState.zoom,
+    maxY: (height / 2 - uiState.pan.y) / uiState.zoom,
     minT: t0,
     maxT: Infinity
   }
@@ -734,15 +729,15 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
       if (!startedBeingOnScreen && (p.t >= firstSegment.maxT || (lastPoint && cohenSutherlandLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, {...lastPoint}, {...p})) || bbContains(displayBB, p))) {
         startedBeingOnScreen = true
         if (!lastPoint) lastPoint = p
-        ctx.moveTo(lastPoint.x * zoom + width / 2 + pan.x, lastPoint.y * zoom + height / 2 + pan.y)
+        ctx.moveTo(lastPoint.x * uiState.zoom + width / 2 + uiState.pan.x, lastPoint.y * uiState.zoom + height / 2 + uiState.pan.y)
       }
       lastPoint = p
       if (startedBeingOnScreen) {
         if (drawPoints) {
-          ctx.moveTo(p.x * zoom + width / 2 + pan.x, p.y * zoom + height / 2 + pan.y)
-          ctx.arc(p.x * zoom + width / 2 + pan.x, p.y * zoom + height / 2 + pan.y, 2, 0, 2 * Math.PI)
+          ctx.moveTo(p.x * uiState.zoom + width / 2 + uiState.pan.x, p.y * uiState.zoom + height / 2 + uiState.pan.y)
+          ctx.arc(p.x * uiState.zoom + width / 2 + uiState.pan.x, p.y * uiState.zoom + height / 2 + uiState.pan.y, 2, 0, 2 * Math.PI)
         } else {
-          ctx.lineTo(p.x * zoom + width / 2 + pan.x, p.y * zoom + height / 2 + pan.y)
+          ctx.lineTo(p.x * uiState.zoom + width / 2 + uiState.pan.x, p.y * uiState.zoom + height / 2 + uiState.pan.y)
         }
         nPoints++
         if (!bbContains(displayBB, p)) {
@@ -769,10 +764,10 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
 function drawTrajectory(ctx, trajectory, selected = false, t0 = 0) {
   const bbtree = bbTreeForTrajectory(trajectory)
   const displayBB = {
-    minX: (-width / 2 - pan.x) / zoom,
-    minY: (-height / 2 - pan.y) / zoom,
-    maxX: (width / 2 - pan.x) / zoom,
-    maxY: (height / 2 - pan.y) / zoom,
+    minX: (-width / 2 - uiState.pan.x) / uiState.zoom,
+    minY: (-height / 2 - uiState.pan.y) / uiState.zoom,
+    maxX: (width / 2 - uiState.pan.x) / uiState.zoom,
+    maxY: (height / 2 - uiState.pan.y) / uiState.zoom,
     minT: t0,
     maxT: Infinity
   }
@@ -792,10 +787,10 @@ function drawTrajectory(ctx, trajectory, selected = false, t0 = 0) {
         else
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
         ctx.strokeRect(
-          (bb.minX) * zoom + pan.x + width / 2,
-          (bb.minY) * zoom + pan.y + height / 2,
-          (bb.maxX - bb.minX) * zoom,
-          (bb.maxY - bb.minY) * zoom
+          (bb.minX) * uiState.zoom + uiState.pan.x + width / 2,
+          (bb.minY) * uiState.zoom + uiState.pan.y + height / 2,
+          (bb.maxX - bb.minX) * uiState.zoom,
+          (bb.maxY - bb.minY) * uiState.zoom
         )
       }
     }
@@ -839,10 +834,10 @@ function drawTrajectory(ctx, trajectory, selected = false, t0 = 0) {
 function drawVesselTrajectory(ctx, vessel, selected = false, t0 = 0) {
   const bbtree = bbTreeForTrajectory(vessel.trajectory)
   const displayBB = {
-    minX: (-width / 2 - pan.x) / zoom,
-    minY: (-height / 2 - pan.y) / zoom,
-    maxX: (width / 2 - pan.x) / zoom,
-    maxY: (height / 2 - pan.y) / zoom,
+    minX: (-width / 2 - uiState.pan.x) / uiState.zoom,
+    minY: (-height / 2 - uiState.pan.y) / uiState.zoom,
+    maxX: (width / 2 - uiState.pan.x) / uiState.zoom,
+    maxY: (height / 2 - uiState.pan.y) / uiState.zoom,
     minT: t0,
     maxT: Infinity
   }
@@ -908,7 +903,7 @@ function draw() {
     const pos = trajectory.evaluatePosition(universe.currentTime)
     const screenPos = worldToScreen(pos)
     ctx.beginPath()
-    const r = Math.max(2, body.radius * zoom)
+    const r = Math.max(2, body.radius * uiState.zoom)
     ctx.arc(screenPos.x, screenPos.y, r, 0, 2 * Math.PI)
     ctx.fill()
 
@@ -957,7 +952,7 @@ function draw() {
   const end = performance.now()
   const drawTime = end - start
   document.querySelector('#draw-time').textContent = drawTime.toFixed(2) + ' ms'
-  document.querySelector('#zoom-level').textContent = zoom.toPrecision(2) + 'x'
+  document.querySelector('#zoom-level').textContent = uiState.zoom.toPrecision(2) + 'x'
   document.querySelector('#t').textContent = tMax
 }
 
@@ -1023,13 +1018,17 @@ document.querySelector("#reducePrediction").onclick = () => {
 }
 
 document.querySelector("#save").onclick = () => {
-  idb.set('universe', serialize(universe))
+  idb.set('gameState', {
+    universe: serialize(universe),
+    uiState,
+  })
 }
 document.querySelector("#load").onclick = () => {
-  idb.get('universe').then((saveState) => {
+  idb.get('gameState').then((saveState) => {
     if (saveState) {
-      universe.init(deserialize(Universe, saveState))
+      universe.init(deserialize(Universe, saveState.universe))
       clearSelection()
+      Object.assign(uiState, saveState.uiState)
       requestDraw()
     }
   })
