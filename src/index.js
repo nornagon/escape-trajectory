@@ -72,6 +72,7 @@ canvas.addEventListener("wheel", event => {
   let oldZoom = uiState.zoom
   uiState.zoom *= k
   uiState.zoom = Math.min(uiState.zoom, 1)
+  uiState.zoom = Math.max(uiState.zoom, 1e-11)
   k = uiState.zoom / oldZoom
 
   uiState.pan.x = event.offsetX - width / 2 - x * k
