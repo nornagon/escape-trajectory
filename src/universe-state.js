@@ -297,6 +297,7 @@ function blankUniverse() {
       }),
     ],
   }
+  /** @type Array<Array<Site>> */
   const sites = bodies.map(b => sitesByName[b.name] || [])
 
   return Universe.create(bodies, sites, bodyInitialStates)
@@ -334,6 +335,7 @@ export class Universe {
   ephemeris
   currentTime = 0
   tMax = 0
+  /** @type {Array<Array<Site>>} */
   sites = []
   /** @type {Array<Vessel>} */
   vessels = []

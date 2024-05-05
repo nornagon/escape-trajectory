@@ -968,17 +968,17 @@ function requestDraw() {
 }
 
 step.onclick = () => {
-  universe.currentTime += universe.ephemeris.step
+  universe.step(universe.ephemeris.step)
   universe.prolong(universe.currentTime + predictionHorizon)
 }
 
 step10.onclick = () => {
-  universe.currentTime += universe.ephemeris.step * 10
+  universe.step(universe.ephemeris.step * 10)
   universe.prolong(universe.currentTime + predictionHorizon)
 }
 
 step100.onclick = () => {
-  universe.currentTime += universe.ephemeris.step * 100
+  universe.step(universe.ephemeris.step * 100)
   universe.prolong(universe.currentTime + predictionHorizon)
 }
 
