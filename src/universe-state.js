@@ -39,7 +39,7 @@ const KeplerianElements = {
     ω: 102.94719,
     M: 100.46435,
   },
-  Moon: {
+  Luna: {
     a: 0.00256955529 * au,
     e: 0.054900489,
     i: 5.16,
@@ -170,7 +170,7 @@ const celestials = [
 
   { name: "Earth", mass: 5.97237e24, position: {x: 1.496e11, y: 0}, velocity: {x: 0, y: 29.78e3}, radius: 6371e3, color: "#00f" },
 
-    { name: "Moon", mass: 7.34767309e22, position: {x: 1.496e11 + 3.844e8, y: 0}, velocity: {x: 0, y: 29.78e3 + 1022}, radius: 1737.4e3, color: "#ccc", parent: "Earth" },
+    { name: "Luna", mass: 7.34767309e22, position: {x: 1.496e11 + 3.844e8, y: 0}, velocity: {x: 0, y: 29.78e3 + 1022}, radius: 1737.4e3, color: "#ccc", parent: "Earth" },
 
   { name: "Mars", mass: 6.4171e23, position: {x: 2.2794e11, y: 0}, velocity: {x: 0, y: 24.077e3}, radius: 3389.5e3, color: "#ce8258" },
 
