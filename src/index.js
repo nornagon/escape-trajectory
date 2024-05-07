@@ -1048,7 +1048,6 @@ function resizeCanvas() {
   requestDraw()
 }
 window.addEventListener('resize', resizeCanvas)
-resizeCanvas()
 
 let redrawQueued = false
 function redraw() {
@@ -1065,5 +1064,8 @@ options.event = (e) => {
   queueRedraw()
   return e
 }
-redraw()
-onUniverseChanged(requestDraw)
+Promise.all([...document.fonts].map(f => f.load())).then(() => {
+  resizeCanvas()
+  redraw()
+  onUniverseChanged(requestDraw)
+})
