@@ -382,6 +382,7 @@ export class Ephemeris {
    * @param {*} parameters
    */
   flowWithAdaptiveStep(trajectory, t, intrinsicAcceleration = (() => vops.zero), parameters = {lengthIntegrationTolerance: 1, speedIntegrationTolerance: 1, maxSteps: Infinity}) {
+    if (trajectory.tMax >= t) return
     this.prolong(t)
     const trajectoryLastTime = trajectory.tMax
     const trajectoryLastPosition = trajectory.evaluatePosition(trajectoryLastTime)
