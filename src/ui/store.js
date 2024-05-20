@@ -3,7 +3,6 @@ export const transientUiState = {
 }
 
 export const uiState = {
-  //selection: null,
   overlay: null,
   pan: {x: 0, y: 0},
   zoom: 38e-6,

@@ -427,6 +427,32 @@ function setOriginBody(i) {
   requestDraw()
 }
 
+const easing = {
+  linear: t => t,
+  easeInQuad: t => t*t,
+  easeOutQuad: t => t*(2-t),
+  easeInOutQuad: t => t<.5 ? 2*t*t : -1+(4-2*t)*t,
+  easeInCubic: t => t*t*t,
+  easeOutCubic: t => (--t)*t*t+1,
+  easeInOutCubic: t => t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1,
+  easeInQuart: t => t*t*t*t,
+  easeOutQuart: t => 1-(--t)*t*t*t,
+  easeInOutQuart: t => t<.5 ? 8*t*t*t*t : 1-8*(--t)*t*t*t,
+  easeInQuint: t => t*t*t*t*t,
+  easeOutQuint: t => 1+(--t)*t*t*t*t,
+  easeInOutQuint: t => t<.5 ? 16*t*t*t*t*t : 1+16*(--t)*t*t*t*t,
+}
+
+const animations = new WeakMap
+function useAnimation(key, duration, easing = t => t) {
+  const anim = animations.get(key) ?? { t: 0 }
+  animations.set(key, anim)
+  anim.t = Math.min(1, anim.t + 1 / (60 * duration))
+  const t = easing(anim.t)
+  if (anim.t < 1) requestDraw()
+  return t
+}
+
 /**
  * @param {CanvasRenderingContext2D} ctx
  */
@@ -448,8 +474,9 @@ function drawUI(ctx) {
       }
     })
     if (selected) {
-      const r2 = r + 4
-      ctx.strokeStyle = 'white'
+      const t = useAnimation(uiState.selection, 0.25, easing.easeOutQuad)
+      const r2 = r + 4 + lerp(10, 0, t)
+      ctx.strokeStyle = `rgba(255, 255, 255, ${t})`
       ctx.lineWidth = 1
       ctx.beginPath()
       ctx.rect(Math.round(screenPos.x - r2) + 0.5, Math.round(screenPos.y - r2) + 0.5, r2 * 2 - 1, r2 * 2 - 1)
@@ -676,14 +703,15 @@ function drawUI(ctx) {
     const bodyScreenPos = worldToScreen(trajectory.evaluatePosition(universe.currentTime))
 
     // Draw a diamond around the body
-    const diamondRadius = 10
+    const t = useAnimation(uiState.selection, 0.25, easing.easeOutQuad)
+    const diamondRadius = lerp(50, 10, t)
     ctx.beginPath()
     ctx.moveTo(bodyScreenPos.x, bodyScreenPos.y - diamondRadius)
     ctx.lineTo(bodyScreenPos.x + diamondRadius, bodyScreenPos.y)
     ctx.lineTo(bodyScreenPos.x, bodyScreenPos.y + diamondRadius)
     ctx.lineTo(bodyScreenPos.x - diamondRadius, bodyScreenPos.y)
     ctx.closePath()
-    ctx.strokeStyle = 'rgba(255, 255, 255, 1)'
+    ctx.strokeStyle = `rgba(255, 255, 255, ${lerp(0, 1, t)})`
     ctx.lineWidth = 3
     ctx.stroke()
   }
