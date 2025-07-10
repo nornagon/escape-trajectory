@@ -4,6 +4,7 @@ import { parameterDisplay } from '../modules.js'
 import { formatDuration } from '../util.js'
 import { transientUiState, uiState } from './store.js'
 import { Resources } from './resources.js'
+import { Maneuver } from '../vessel.js'
 
 const styles = new CSSStyleSheet()
 styles.replaceSync(`
@@ -83,14 +84,14 @@ export function VesselDetails({vesselId}) {
       <div class="vessel-details__content">
         <div class="vessel-details__row">
           <div class="vessel-details__label">Mass</div>
-          <div class="vessel-details__value">${parameterDisplay.mass.format(hoverTime != null ? vessel.massAt(hoverTime) : vessel.mass)}</div>
+          <div class="vessel-details__value">${parameterDisplay.mass.format(vessel.massAt(hoverTime ?? universe.currentTime))}</div>
         </div>
         <div class="vessel-details__row">
           <div class="vessel-details__label">∆v</div>
-          <div class="vessel-details__value">${parameterDisplay.deltaV.format(hoverTime != null ? vessel.deltaVAt(hoverTime) : vessel.deltaV)}</div>
+          <div class="vessel-details__value">${parameterDisplay.deltaV.format(vessel.deltaVAt(hoverTime ?? universe.currentTime))}</div>
         </div>
       </div>
-      <${Resources} resources=${hoverTime != null ? vessel.resourcesAt(hoverTime) : vessel.configuration.resources} />
+      <${Resources} resources=${vessel.resourcesAt(hoverTime ?? universe.currentTime)} />
       <div class="vessel-details__modules">
         <div class="vessel-details__modules-title">Modules</div>
         ${vessel.configuration.modules.map(m => html`
@@ -101,12 +102,12 @@ export function VesselDetails({vesselId}) {
       </div>
       <div class="vessel-details__maneuvers">
         <div class="vessel-details__maneuvers-title">Maneuvers</div>
-        ${vessel.maneuvers.map(m => html`
+        ${vessel.maneuvers.filter(m => m.endTime >= universe.currentTime).map(m => html`
           <div class="vessel-details__maneuver">
-            <div class="vessel-details__maneuver-time">T–${formatDuration(m.startTime - universe.currentTime)}</div>
-            <div class="vessel-details__maneuver-duration">∆t ${formatDuration(m.duration)}</div>
-            <div class="vessel-details__maneuver-delta-v">∆v ${parameterDisplay.deltaV.format(m.deltaV)}</div>
-            <div class="vessel-details__maneuver-delta-m">∆m ${parameterDisplay.mass.format(m.massUsed)}</div>
+            <div class="vessel-details__maneuver-time">${m.startTime > universe.currentTime ? `T–${formatDuration(m.startTime - universe.currentTime)}` : `T+${formatDuration(universe.currentTime - m.startTime)}`}</div>
+            <div class="vessel-details__maneuver-duration">∆t ${formatDuration(m.remainingDurationAt(universe.currentTime))}</div>
+            <div class="vessel-details__maneuver-delta-v">∆v ${parameterDisplay.deltaV.format(m.remainingDeltaVAt(universe.currentTime))}</div>
+            <div class="vessel-details__maneuver-delta-m">∆m ${parameterDisplay.mass.format(m.remainingMassAt(universe.currentTime))}</div>
             <label class="vessel-details__maneuver-inertially-fixed">
               <input type="checkbox" class="vessel-details__maneuver-toggle" checked=${m.inertiallyFixed} oninput=${(e) => {
                 m.inertiallyFixed = e.target.checked

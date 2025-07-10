@@ -104,6 +104,25 @@ export class Maneuver {
     return effectiveVexh * Math.log(initialMass / finalMass)
   }
 
+  remainingDeltaVAt(t) {
+    if (t > this.endTime) return 0;
+    const initialMass = this.vessel.massAt(this.#startTime)
+    const finalMass = initialMass - this.massUsed
+    const massAtT = initialMass - this.massFlowRate * (this.#duration - this.remainingDurationAt(t))
+    if (massAtT <= 0) return 0;
+    const effectiveVexh = this.thrust / this.massFlowRate
+    return effectiveVexh * Math.log(massAtT / finalMass)
+  }
+
+  remainingDurationAt(t) {
+    return Math.max(this.endTime, t) - Math.max(this.startTime, t);
+  }
+
+  remainingMassAt(t) {
+    if (t > this.endTime) return 0;
+    return this.massFlowRate * this.remainingDurationAt(t)
+  }
+
   frenetIntrinsicAcceleration(t, q, v) {
     const prograde = vnormalize(vsub(v, this.#referenceTrajectory.evaluateVelocity(t)))
     const radial = vperp(prograde) // TODO: this isn't true frenet normal, it should be in the direction of acceleration.
@@ -180,7 +199,7 @@ export class Vessel {
   fuelAt(t) {
     let mass = this.#configuration.resources.volatiles
     for (const maneuver of this.#maneuvers) {
-      if (t >= maneuver.startTime)
+      if (t > maneuver.startTime)
         mass -= maneuver.duration === 0 ? 0 : maneuver.massUsed * Math.min(1, (t - maneuver.startTime) / maneuver.duration)
     }
     return mass
