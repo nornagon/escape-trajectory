@@ -33,7 +33,6 @@ let trajectoryBBTrees = new WeakMap
 /// UI STATE
 let mouse = {x: 0, y: 0}
 
-let originBodyIndex = 3
 uiState.selection = { type: 'body', index: 3 }
 
 let trajectoryHoverPoint = null
@@ -170,7 +169,7 @@ canvas.addEventListener("mousedown", event => {
         if (maneuver) {
           selectManeuver(vessel, maneuver)
         } else {
-          const m = vessel.addManeuver(point.t, universe.ephemeris.trajectories[originBodyIndex])
+          const m = vessel.addManeuver(point.t, universe.ephemeris.trajectories[uiState.originBodyIndex])
           selectManeuver(vessel, m)
         }
       } else {
@@ -215,7 +214,7 @@ canvas.addEventListener("mouseup", event => {
 
 
 function worldToScreen(pos, t = universe.currentTime) {
-  const originBodyTrajectory = universe.ephemeris.trajectories[originBodyIndex]
+  const originBodyTrajectory = universe.ephemeris.trajectories[uiState.originBodyIndex]
   const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
     x: (pos.x - originBodyPosition.x) * uiState.zoom + width / 2 + uiState.pan.x,
@@ -223,7 +222,7 @@ function worldToScreen(pos, t = universe.currentTime) {
   }
 }
 function screenToWorld(pos, t = universe.currentTime) {
-  const originBodyTrajectory = universe.ephemeris.trajectories[originBodyIndex]
+  const originBodyTrajectory = universe.ephemeris.trajectories[uiState.originBodyIndex]
   const originBodyPosition = originBodyTrajectory.evaluatePosition(t)
   return {
     x: (pos.x - width / 2 - uiState.pan.x) / uiState.zoom + originBodyPosition.x,
@@ -267,7 +266,7 @@ function bbTreeForTrajectory(trajectory) {
 }
 
 function trajectoryPosInFrame(trajectory, t) {
-  const originBodyTrajectory = universe.ephemeris.trajectories[originBodyIndex]
+  const originBodyTrajectory = universe.ephemeris.trajectories[uiState.originBodyIndex]
   const q = trajectory.evaluatePosition(t)
   const originQ = originBodyTrajectory.evaluatePosition(t)
 
@@ -279,7 +278,7 @@ function trajectoryPosInFrame(trajectory, t) {
 }
 
 function trajectoryVelocityInFrame(trajectory, t) {
-  const originBodyTrajectory = universe.ephemeris.trajectories[originBodyIndex]
+  const originBodyTrajectory = universe.ephemeris.trajectories[uiState.originBodyIndex]
   const q = trajectory.evaluateVelocity(t)
   const originQ = originBodyTrajectory.evaluateVelocity(t)
 
@@ -419,7 +418,7 @@ function selectManeuver(vessel, maneuver) {
 }
 
 function setOriginBody(i) {
-  originBodyIndex = i
+  uiState.originBodyIndex = i
   trajectoryBBTrees = new WeakMap
   uiState.pan.x = 0
   uiState.pan.y = 0
@@ -489,7 +488,7 @@ function drawUI(ctx) {
     // Draw maneuver indicators.
     for (const maneuver of selectedVessel.maneuvers) {
       const q = selectedVessel.trajectory.evaluatePosition(maneuver.startTime)
-      const originQ = universe.ephemeris.trajectories[originBodyIndex].evaluatePosition(maneuver.startTime)
+      const originQ = universe.ephemeris.trajectories[uiState.originBodyIndex].evaluatePosition(maneuver.startTime)
       const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
 
       ctx.beginPath()
@@ -515,7 +514,7 @@ function drawUI(ctx) {
     }
     if (currentManeuver) {
       const q = selectedVessel.trajectory.evaluatePosition(currentManeuver.startTime)
-      const originQ = universe.ephemeris.trajectories[originBodyIndex].evaluatePosition(currentManeuver.startTime)
+      const originQ = universe.ephemeris.trajectories[uiState.originBodyIndex].evaluatePosition(currentManeuver.startTime)
       const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
 
       ctx.strokeStyle = 'lightblue'
@@ -686,7 +685,7 @@ function drawUI(ctx) {
       }
     } else if (trajectoryHoverPoint) {
       const q = selectedVessel.trajectory.evaluatePosition(trajectoryHoverPoint.t)
-      const originQ = universe.ephemeris.trajectories[originBodyIndex].evaluatePosition(trajectoryHoverPoint.t)
+      const originQ = universe.ephemeris.trajectories[uiState.originBodyIndex].evaluatePosition(trajectoryHoverPoint.t)
       const screenPos = worldToScreenWithoutOrigin(vsub(q, originQ))
 
       const isManeuvering = selectedVessel.maneuvers.some(m => m.startTime <= trajectoryHoverPoint.t && m.endTime >= trajectoryHoverPoint.t)
@@ -918,7 +917,7 @@ function draw() {
 
   const tMax = universe.tMax
   universe.ephemeris.trajectories.forEach((trajectory, i) => {
-    if (i !== originBodyIndex) {
+    if (i !== uiState.originBodyIndex) {
       const selected = uiState.selection?.type === 'body' && uiState.selection.index === i
       drawTrajectory(ctx, trajectory, selected)
     }
