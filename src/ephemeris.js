@@ -253,7 +253,7 @@ export class Trajectory {
     const t1 = p1.time
     const q0 = p0.position
     const q1 = p1.position
-    return vops.addi(vops.scalei(vops.sub(q1, q0), (t - t0) / (t1 - t0)), q0)
+    return vops.lerp(q0, q1, (t - t0) / (t1 - t0))
   }
 
   /**

@@ -1,4 +1,4 @@
-import { bbContains, closestTOnSegment, cohenSutherlandLineClip } from "./geometry.js"
+import { bbContains, closestTOnSegment, liangBarskyLineClip } from "./geometry.js"
 import { InteractionContext2D, polygon } from "./canvas-util.js"
 import { BBTree, vops, lerp } from "./geometry.js"
 import { html } from 'htm/preact'
@@ -9,6 +9,7 @@ import { transientUiState, uiState } from "./ui/store.js"
 import { universe, onUniverseChanged, Universe } from "./universe-state.js"
 import { deserialize, serialize } from "./serialization.js"
 import * as idb from "idb-keyval"
+import { Trajectory } from "./ephemeris.js"
 const {
   add: vadd,
   addi: vaddi,
@@ -28,7 +29,10 @@ const Day = 24 * Hour
 const Month = 30 * Day
 
 
+/** @type {WeakMap<any, BBTree>} */
 let trajectoryBBTrees = new WeakMap
+
+let showBBDebug = false
 
 /// UI STATE
 let mouse = {x: 0, y: 0}
@@ -212,6 +216,25 @@ canvas.addEventListener("mouseup", event => {
   requestDraw()
 })
 
+window.addEventListener("keydown", event => {
+  const selectedVessel = uiState.selection?.type === 'vessel' ? universe.vessels[uiState.selection.index] : null
+  if (selectedVessel) {
+    if (currentManeuver && event.key === 'Backspace') {
+      selectedVessel.removeManeuver(currentManeuver)
+      selectManeuver(null, null)
+      selectedVessel.trajectory.forgetAfter(currentManeuver.startTime)
+      universe.recompute()
+      trajectoryBBTrees.delete(selectedVessel.trajectory)
+      requestDraw()
+    }
+  }
+
+  if (event.code === "KeyB") {
+    showBBDebug = !showBBDebug
+    requestDraw()
+  }
+})
+
 
 function worldToScreen(pos, t = universe.currentTime) {
   const originBodyTrajectory = universe.ephemeris.trajectories[uiState.originBodyIndex]
@@ -265,6 +288,11 @@ function bbTreeForTrajectory(trajectory) {
   return bbtree
 }
 
+/**
+ * @param {Trajectory} trajectory
+ * @param {number} t
+ * @returns
+ */
 function trajectoryPosInFrame(trajectory, t) {
   const originBodyTrajectory = universe.ephemeris.trajectories[uiState.originBodyIndex]
   const q = trajectory.evaluatePosition(t)
@@ -725,7 +753,7 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
     maxX: (width / 2 - uiState.pan.x) / uiState.zoom,
     maxY: (height / 2 - uiState.pan.y) / uiState.zoom,
     minT: t0,
-    maxT: Infinity
+    maxT: t1
   }
   let firstSegment = bbtree.queryFirst(displayBB)
   if (!firstSegment) return
@@ -741,20 +769,26 @@ function makeTrajectoryPath(ctx, trajectory, t0, t1, drawPoints = false) {
     let nPoints = 0
     let lastPoint = null
     let nIterations = 0
-    const p0 = trajectoryPosInFrame(trajectory, firstSegment.minT)
+    const p0 = trajectoryPosInFrame(trajectory, Math.max(universe.currentTime, firstSegment.minT))
     const p1 = trajectoryPosInFrame(trajectory, firstSegment.maxT)
-    const p0_ = {...p0}
-    const p1_ = {...p1}
-    if (!cohenSutherlandLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, p0_, p1_)) {
+    if (!liangBarskyLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, p0, p1)) {
       // The segment doesn't actually intersect the screen
       displayBB.minT = firstSegment.maxT + 0.001
       firstSegment = bbtree.queryFirst(displayBB)
       continue
     }
-    const t = vlen(vsub(p0_, p0)) / vlen(vsub(p1, p0))
-    for (const p of trajectoryPoints(trajectory, Math.max(t0, Math.min(firstSegment.minT + t * (firstSegment.maxT - firstSegment.minT), t1)), t1)) {
+    if (firstSegment.minX < displayBB.minX && firstSegment.maxX > displayBB.maxX &&
+        firstSegment.minY < displayBB.minY && firstSegment.maxY > displayBB.maxY) {
+      // display BB is completely inside the segment's bounding box, so we can just render the whole segment
+      ctx.moveTo(p0.x * uiState.zoom + width / 2 + uiState.pan.x, p0.y * uiState.zoom + height / 2 + uiState.pan.y)
+      ctx.lineTo(p1.x * uiState.zoom + width / 2 + uiState.pan.x, p1.y * uiState.zoom + height / 2 + uiState.pan.y)
+      displayBB.minT = firstSegment.maxT + 0.001
+      firstSegment = bbtree.queryFirst(displayBB)
+      continue
+    }
+    for (const p of trajectoryPoints(trajectory, Math.max(t0, Math.min(firstSegment.minT, t1)), t1)) {
       nIterations++
-      if (!startedBeingOnScreen && (p.t >= firstSegment.maxT || (lastPoint && cohenSutherlandLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, {...lastPoint}, {...p})) || bbContains(displayBB, p))) {
+      if (!startedBeingOnScreen && (p.t >= firstSegment.maxT || (lastPoint && liangBarskyLineClip(displayBB.minX, displayBB.maxX, displayBB.minY, displayBB.maxY, {...lastPoint}, {...p})) || bbContains(displayBB, p))) {
         startedBeingOnScreen = true
         if (!lastPoint) lastPoint = p
         ctx.moveTo(lastPoint.x * uiState.zoom + width / 2 + uiState.pan.x, lastPoint.y * uiState.zoom + height / 2 + uiState.pan.y)
@@ -802,7 +836,6 @@ function drawTrajectory(ctx, trajectory, selected = false, t0 = 0) {
   let firstSegment = bbtree.queryFirst(displayBB)
   if (!firstSegment) return
 
-  let showBBDebug = false
   if (showBBDebug) {
     ctx.lineWidth = 1
     for (const layer of bbtree.layers) {
@@ -855,8 +888,8 @@ function drawTrajectory(ctx, trajectory, selected = false, t0 = 0) {
  *
  * @param {*} ctx
  * @param {typeof universe.vessels[0]} vessel
- * @param {*} selected
- * @param {*} t0
+ * @param {boolean} selected
+ * @param {number} t0
  * @returns
  */
 function drawVesselTrajectory(ctx, vessel, selected = false, t0 = 0) {
@@ -871,6 +904,27 @@ function drawVesselTrajectory(ctx, vessel, selected = false, t0 = 0) {
   }
   let firstSegment = bbtree.queryFirst(displayBB)
   if (!firstSegment) return
+
+  if (showBBDebug) {
+    ctx.lineWidth = 1
+    for (const layer of bbtree.layers) {
+      for (const bb of layer) {
+        // Red if the mouse is over it. |mouse| has the current mouse position in screen space.
+        const mouseWorldSpace = screenToWorldWithoutOrigin(mouse)
+        if (mouseWorldSpace.x >= bb.minX && mouseWorldSpace.x <= bb.maxX &&
+            mouseWorldSpace.y >= bb.minY && mouseWorldSpace.y <= bb.maxY)
+          ctx.strokeStyle = 'red'
+        else
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
+        ctx.strokeRect(
+          (bb.minX) * uiState.zoom + uiState.pan.x + width / 2,
+          (bb.minY) * uiState.zoom + uiState.pan.y + height / 2,
+          (bb.maxX - bb.minX) * uiState.zoom,
+          (bb.maxY - bb.minY) * uiState.zoom
+        )
+      }
+    }
+  }
 
   ctx.lineWidth = 2
   ctx.lineJoin = 'round'
